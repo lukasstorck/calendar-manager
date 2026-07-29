@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Authentication</title>
+  </head>
+  <body>
+    <script>
+      if (window.opener) {
+        window.opener.postMessage({ type: "oauth-success" }, window.location.origin);
+        window.close();
+      } else {
+        window.location.href = "/";
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <title>Calendar Manager</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.3.1/css/all.min.css" rel="stylesheet" />
+    <style>
+      .token-predicate {
+        color: #6ea8fe;
+      }
+      .token-negated {
+        color: #ea868f;
+      }
+      .token-colon {
+        color: var(--bs-secondary-color);
+      }
+      .tok-special {
+        color: #ffda6a;
+        text-decoration: underline dotted;
+        cursor: help;
+      }
+
+      /* Limit the width of the bootstrap dropdown menu, truncate long strings */
+      .dropdown-menu {
+        max-width: 320px;
+      }
+    </style>
+  </head>
+  <body class="d-flex flex-column min-vh-100">
+    <!-- Loading screen -->
+    <div id="loading-screen" class="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center bg-body" style="z-index: 2000">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+    </div>
+
+    <!-- Logged out: info page, no title bar -->
+    <div id="info-page" class="d-none">
+      <div class="d-flex justify-content-end m-3">
+        <button class="btn btn-primary" data-bs-toggle="offcanvas" data-bs-target="#login-offcanvas">
+          <i class="fa-solid fa-right-to-bracket me-1"></i>Login
+        </button>
+      </div>
+
+      <main class="container d-flex align-items-center justify-content-center">
+        <div class="text-center" style="max-width: 640px">
+          <h1 class="mb-3"><i class="fa-solid fa-calendar-days me-2"></i>Calendar Manager</h1>
+          <p class="text-body-secondary mb-4">Bring your calendars together, make automated adjustements, and share them with others.</p>
+
+          <div class="row g-3 text-start mb-4">
+            <div class="col-12 col-md-4 d-flex">
+              <div class="card h-100 w-100">
+                <div class="card-body">
+                  <div class="d-inline display-4 text-secondary">1.</div>
+                  <h3 class="d-inline d-md-block fw-bold">Imports</h3>
+                  <p class="mb-0">Subscribe to web calendars or upload static <code>.ics</code> files</p>
+                  <ul class="mb-0 ps-3">
+                    <li>automated backups</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-12 col-md-4 d-flex">
+              <div class="card h-100 w-100">
+                <div class="card-body">
+                  <div class="d-inline display-4 text-secondary">2.</div>
+                  <h3 class="d-inline d-md-block fw-bold">Exports</h3>
+                  <p class="mb-0">Combine imports, apply filter rules, and publish results</p>
+                  <ul class="mb-0 ps-3">
+                    <li>public custom link name</li>
+                    <li>optional token protection</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-12 col-md-4 d-flex">
+              <div class="card h-100 w-100">
+                <div class="card-body">
+                  <div class="d-inline display-4 text-secondary">3.</div>
+                  <h3 class="d-inline d-md-block fw-bold">Boards</h3>
+                  <p class="mb-0">Group published exports and share them with a single link</p>
+                  <ul class="mb-0 ps-3">
+                    <li>public custom link name</li>
+                    <li>optional token protection</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <button class="btn btn-primary" data-bs-toggle="offcanvas" data-bs-target="#login-offcanvas">Get started</button>
+        </div>
+      </main>
+    </div>
+
+    <!-- Logged in: the app -->
+    <div id="app" class="d-none">
+      <nav class="navbar navbar-expand border-bottom">
+        <div class="container-fluid">
+          <span class="navbar-brand mb-0 h1"><i class="fa-solid fa-calendar-days me-2"></i>Calendar Manager</span>
+          <button id="logout-button" class="btn btn-sm btn-outline-secondary"><i class="fa-solid fa-right-from-bracket me-1"></i>Logout</button>
+        </div>
+      </nav>
+
+      <main class="container py-3">
+        <section class="mb-4">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2 class="h5 text-uppercase text-body-secondary mb-0">Imports</h2>
+            <button id="new-import-button" class="btn btn-primary btn-sm">
+              <i class="fa-solid fa-plus" aria-hidden="true"></i>
+              <span class="d-none d-sm-inline">New import</span>
+            </button>
+          </div>
+          <div id="imports-empty" class="list-group-item text-body-secondary d-none">No imports yet. Use the + button above to add one.</div>
+          <div id="imports-list" class="list-group"></div>
+        </section>
+
+        <section class="mb-4">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2 class="h5 text-uppercase text-body-secondary mb-0">Exports</h2>
+            <button id="new-export-button" class="btn btn-primary btn-sm">
+              <i class="fa-solid fa-plus" aria-hidden="true"></i>
+              <span class="d-none d-sm-inline">New export</span>
+            </button>
+          </div>
+          <div id="exports-empty" class="list-group-item text-body-secondary d-none">No exports yet. Use the + button above to create one.</div>
+          <div id="exports-list" class="list-group"></div>
+        </section>
+
+        <section>
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2 class="h5 text-uppercase text-body-secondary mb-0">Boards</h2>
+            <button id="new-board-button" class="btn btn-primary btn-sm">
+              <i class="fa-solid fa-plus" aria-hidden="true"></i>
+              <span class="d-none d-sm-inline">New board</span>
+            </button>
+          </div>
+          <div id="boards-empty" class="list-group-item text-body-secondary d-none">No boards yet. Use the + button above to create one.</div>
+          <div id="boards-list" class="list-group"></div>
+        </section>
+      </main>
+    </div>
+
+    <!-- ================= Offcanvas / Modals ================= -->
+
+    <!-- Login: offcanvas from the right -->
+    <div class="offcanvas offcanvas-end" tabindex="-1" id="login-offcanvas">
+      <div class="offcanvas-header">
+        <h5 class="offcanvas-title">Sign in</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+      </div>
+      <div class="offcanvas-body d-flex flex-column align-items-start gap-2" id="login-providers">
+        <div id="login-providers-empty" class="text-body-secondary small d-none">No login providers are configured.</div>
+      </div>
+    </div>
+
+    <!-- Add source to an existing import: tabbed by source type -->
+    <div class="modal" tabindex="-1" id="import-wizard-modal">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Add source</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p class="text-body-secondary">What would you like to import?</p>
+            <ul class="nav nav-tabs mb-3" id="import-tabs">
+              <li class="nav-item">
+                <button class="nav-link active" id="import-tab-url-button" data-bs-toggle="tab" data-bs-target="#import-tab-url" type="button">
+                  <i class="fa-solid fa-cloud-arrow-down me-1"></i>From web calendar
+                </button>
+              </li>
+              <li class="nav-item">
+                <button class="nav-link" id="import-tab-file-button" data-bs-toggle="tab" data-bs-target="#import-tab-file" type="button">
+                  <i class="fa-solid fa-file-arrow-up me-1"></i>Upload file
+                </button>
+              </li>
+            </ul>
+            <div class="tab-content">
+              <div class="tab-pane show active" id="import-tab-url">
+                <p class="small text-body-secondary">Add a link to an .ics feed. It's checked periodically and kept up to date automatically.</p>
+                <div class="mb-3">
+                  <label class="form-label" for="wizard-url">Calendar URL</label>
+                  <input type="url" id="wizard-url" class="form-control" placeholder="https://example.com/calendar.ics" />
+                </div>
+              </div>
+              <div class="tab-pane" id="import-tab-file">
+                <p class="small text-body-secondary">
+                  Upload a single .ics file. It's imported once and won't update on its own — replace it manually whenever it changes.
+                </p>
+                <div class="mb-3">
+                  <label class="form-label" for="wizard-file">Calendar file</label>
+                  <input type="file" id="wizard-file" class="form-control" accept=".ics" />
+                </div>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="wizard-label">Source label</label>
+              <input type="text" id="wizard-label" class="form-control" placeholder="Label (optional)" />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button class="btn btn-primary" id="wizard-ok-button"><i class="fa-solid fa-check me-1"></i>Add</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Export edit modal -->
+    <div class="modal" tabindex="-1" id="export-modal">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Edit export</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label" for="export-name">Name</label>
+              <input type="text" id="export-name" class="form-control" placeholder="e.g. Work calendar" />
+              <div class="invalid-feedback" id="export-name-error"></div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="export-description">Description</label>
+              <textarea id="export-description" class="form-control" rows="2" placeholder="e.g. Only work meetings, hides anything tagged personal"></textarea>
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="export-link-name">Public export link name</label>
+              <input type="text" id="export-link-name" class="form-control" placeholder="e.g. work-calendar" aria-describedby="export-link-name-help" />
+              <div class="form-text" id="export-link-name-help">Any alphanumeric characters and "-", "_", "+", "@", max 100 characters.</div>
+              <div class="invalid-feedback" id="export-link-name-error"></div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Link</label>
+              <div class="d-flex align-items-center gap-2">
+                <span id="export-link-name-link-placeholder" class="text-body-secondary flex-grow-1" data-placeholder
+                  >(set a public link name to get a shareable link)</span
+                >
+                <a
+                  id="export-link-name-link-display"
+                  href="#"
+                  target="_blank"
+                  rel="noopener"
+                  class="text-body-secondary text-break flex-grow-1 d-none"
+                  data-display
+                ></a>
+                <button class="btn btn-outline-secondary btn-sm" id="export-copy-link-button" title="Copy link" disabled data-copy-button>
+                  <i class="fa-solid fa-copy"></i>
+                </button>
+              </div>
+            </div>
+            <div class="mb-3 d-flex align-items-center gap-3">
+              <div class="form-check form-switch mb-0">
+                <input type="checkbox" class="form-check-input" role="switch" id="export-protected" />
+                <label class="form-check-label" for="export-protected">Protected</label>
+              </div>
+              <button class="btn btn-sm btn-outline-secondary" id="export-reroll-button"><i class="fa-solid fa-arrows-rotate me-1"></i>Reroll token</button>
+            </div>
+            <div class="mb-3 d-flex align-items-center gap-3">
+              <div class="form-check form-switch mb-0">
+                <input type="checkbox" class="form-check-input" role="switch" id="export-published" />
+                <label class="form-check-label" for="export-published">Published</label>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Sources (from Imports)</label>
+              <div class="border rounded p-2 overflow-auto" style="max-height: 140px" id="export-sources">
+                <div id="export-sources-empty" class="text-body-secondary small d-none">No imports available yet.</div>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="export-rule">Filter rule</label>
+              <textarea
+                id="export-rule"
+                class="form-control font-monospace"
+                rows="3"
+                spellcheck="false"
+                placeholder="e.g. from:today() title-contains:standup,sync -calendar-name-contains:personal"
+              ></textarea>
+              <div class="form-text font-monospace" id="export-rule-preview"></div>
+              <div class="invalid-feedback" id="export-rule-error"></div>
+            </div>
+          </div>
+          <div class="modal-footer justify-content-between">
+            <span class="text-body-secondary small" id="save-status">All changes saved</span>
+            <div>
+              <button class="btn btn-outline-danger" id="export-delete-button"><i class="fa-solid fa-trash me-1"></i>Delete export</button>
+              <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Board edit modal -->
+    <div class="modal" tabindex="-1" id="board-modal">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Edit board</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label" for="board-name">Board name</label>
+              <input type="text" id="board-name" class="form-control" />
+              <div class="invalid-feedback" id="board-name-error"></div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="board-description">Description</label>
+              <textarea id="board-description" class="form-control" rows="2"></textarea>
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="board-link-name">Public board link name</label>
+              <input type="text" id="board-link-name" class="form-control" placeholder="e.g. my-calendars" aria-describedby="board-link-name-help" />
+              <div class="form-text" id="board-link-name-help">Any alphanumeric characters and -, _, +, @, max 100 characters.</div>
+              <div class="invalid-feedback" id="board-link-name-error"></div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Link</label>
+              <div class="d-flex align-items-center gap-2">
+                <span id="board-link-placeholder" class="text-body-secondary flex-grow-1" data-placeholder
+                  >(set a public link name to get a shareable link)</span
+                >
+                <a id="board-link-display" href="#" target="_blank" rel="noopener" class="text-body-secondary text-break flex-grow-1 d-none" data-display></a>
+                <button class="btn btn-outline-secondary btn-sm" id="board-copy-link-button" title="Copy link" disabled data-copy-button>
+                  <i class="fa-solid fa-copy"></i>
+                </button>
+              </div>
+            </div>
+            <div class="mb-3 d-flex align-items-center gap-3">
+              <div class="form-check form-switch mb-0">
+                <input type="checkbox" class="form-check-input" role="switch" id="board-protected" />
+                <label class="form-check-label" for="board-protected">Protected</label>
+              </div>
+              <button class="btn btn-sm btn-outline-secondary" id="board-reroll-button"><i class="fa-solid fa-arrows-rotate me-1"></i>Reroll token</button>
+            </div>
+            <div class="mb-3 d-flex align-items-center gap-3">
+              <div class="form-check form-switch mb-0">
+                <input type="checkbox" class="form-check-input" role="switch" id="board-published" />
+                <label class="form-check-label" for="board-published">Published</label>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Calendars shown on this board</label>
+              <div class="border rounded p-2 overflow-auto" style="max-height: 160px" id="board-calendars">
+                <div id="board-calendars-empty" class="text-body-secondary small d-none">No exports available yet, create one first.</div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer justify-content-between">
+            <span class="text-body-secondary small" id="board-save-status">All changes saved</span>
+            <div>
+              <button class="btn btn-outline-danger" id="board-delete-button"><i class="fa-solid fa-trash me-1"></i>Delete board</button>
+              <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Source edit / inspect modal: title is the source label (inline
+         renamed the same way import names are), a low-key type indicator and
+         an "Active source" badge sit behind it, then type-specific fields
+         below (web calendar vs. uploaded file). -->
+    <div class="modal" tabindex="-1" id="source-edit-modal">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <div class="d-flex align-items-center gap-2 flex-wrap flex-grow-1">
+              <h5 id="source-edit-title-display" class="modal-title text-break mb-0"></h5>
+              <span class="d-inline-flex align-items-center gap-1 d-none" id="source-edit-title-controls">
+                <input type="text" class="form-control form-control-sm" style="max-width: 200px" id="source-edit-title-input" />
+                <button class="btn btn-sm btn-outline-success" id="source-edit-title-accept" title="Save" disabled>
+                  <i class="fa-solid fa-check"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger" id="source-edit-title-cancel" title="Cancel">
+                  <i class="fa-solid fa-xmark"></i>
+                </button>
+              </span>
+              <button class="btn btn-sm btn-outline-secondary" id="source-edit-title-edit" title="Rename">
+                <i class="fa-solid fa-pen"></i>
+              </button>
+              <span class="text-body-secondary small" id="source-edit-type-label"></span>
+              <span class="badge text-bg-primary d-none" id="source-edit-active-badge">Active source</span>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <!-- Web calendar fields -->
+            <div class="row g-3 mb-3 d-none" id="source-edit-web-fields">
+              <div class="col-sm-4">
+                <div class="small text-body-secondary">Status</div>
+                <div>
+                  <span id="source-edit-status-success" class="badge text-bg-success d-none"><i class="fa-solid fa-check me-1"></i>Success</span>
+                  <span id="source-edit-status-fail" class="d-none">
+                    <span class="badge text-bg-danger"><i class="fa-solid fa-xmark me-1"></i>Failed</span>
+                    <div class="small text-body-secondary mt-1" id="source-edit-status-fail-reason"></div>
+                  </span>
+                </div>
+              </div>
+              <div class="col-sm-4">
+                <div class="small text-body-secondary">Last update</div>
+                <div id="source-edit-last-pulled"></div>
+              </div>
+              <div class="col-sm-4">
+                <div class="small text-body-secondary">Source URL</div>
+                <a id="source-edit-url" href="#" target="_blank" rel="noopener" class="d-inline-block text-truncate" style="max-width: 100%"></a>
+              </div>
+            </div>
+            <div class="d-none" id="source-edit-web-backup-section">
+              <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" id="source-edit-contribute-backup" />
+                <label class="form-check-label" for="source-edit-contribute-backup">
+                  Backup
+                  <div class="small text-body-secondary">
+                    Saves a snapshot of this calendar whenever its source changes, so earlier versions can be recovered later. Snapshots are stored per URL and
+                    pooled across users to avoid duplicates: if anyone else has already backed up this exact URL, those snapshots are visible to you too, and
+                    yours would be visible to them. This is rarely a real concern, since private calendar links usually carry their own unique access token.
+                  </div>
+                </label>
+              </div>
+              <h6>Backups</h6>
+              <div id="source-edit-snapshots">
+                <div id="source-edit-snapshots-loading" class="text-body-secondary small d-none">Loading...</div>
+                <div id="source-edit-snapshots-empty" class="text-body-secondary small d-none">No backups yet.</div>
+                <div id="source-edit-snapshots-list"></div>
+              </div>
+            </div>
+
+            <!-- Uploaded file fields -->
+            <div class="row g-3 mb-3 d-none" id="source-edit-file-fields">
+              <div class="col-sm-4">
+                <div class="small text-body-secondary">Added</div>
+                <div id="source-edit-file-added"></div>
+              </div>
+              <div class="col-sm-4">
+                <div class="small text-body-secondary">Events</div>
+                <div id="source-edit-file-stats"></div>
+              </div>
+            </div>
+            <div class="d-none d-flex flex-wrap gap-2" id="source-edit-file-actions">
+              <a class="btn btn-outline-secondary" id="source-edit-file-download" download> <i class="fa-solid fa-download me-1"></i>Download </a>
+              <div class="dropdown">
+                <button class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"><i class="fa-solid fa-copy me-1"></i>Copy to...</button>
+                <ul class="dropdown-menu" id="source-edit-file-copy-targets"></ul>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer justify-content-end">
+            <button class="btn btn-outline-danger" id="source-edit-delete-button"><i class="fa-solid fa-trash me-1"></i>Delete source</button>
+            <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast-root" class="toast-container position-fixed bottom-0 end-0 p-3"></div>
+
+    <!-- ================= Templates ================= -->
+
+    <template id="template-toast">
+      <div class="toast align-items-center border-0" role="alert">
+        <div class="d-flex">
+          <div class="toast-body" data-text></div>
+          <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+      </div>
+    </template>
+
+    <template id="template-login-provider">
+      <button class="btn btn-dark btn-sm" data-provider-button>
+        <i data-icon></i>
+        <span data-label></span>
+        <span class="badge text-bg-light text-dark ms-1 d-none" data-badge>Recommended</span>
+      </button>
+    </template>
+
+    <!-- Generic checkbox row, reused for the export-modal import list and the board-modal export list. -->
+    <template id="template-checkbox-row">
+      <div class="form-check" data-checkbox-row>
+        <input type="checkbox" class="form-check-input" data-checkbox />
+        <label class="form-check-label text-break" data-label></label>
+      </div>
+    </template>
+
+    <template id="template-calendar-import-item">
+      <div class="list-group-item">
+        <div class="d-flex align-items-center gap-1">
+          <div class="flex-grow-1">
+            <span class="fw-semibold text-break" data-name-display></span>
+            <div class="input-group d-none" data-name-controls>
+              <input type="text" class="form-control form-control-sm" data-name-input />
+              <button class="btn btn-sm btn-outline-success" data-accept title="Save" disabled>
+                <i class="fa-solid fa-check"></i>
+              </button>
+              <button class="btn btn-sm btn-outline-danger" data-cancel title="Cancel">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+          </div>
+          <div class="d-flex align-items-center gap-1 flex-shrink-0">
+            <button class="btn btn-sm btn-outline-secondary" data-edit-name title="Rename">
+              <i class="fa-solid fa-pen"></i>
+              <span class="d-none d-sm-inline">Rename</span>
+            </button>
+            <div class="btn-group">
+              <button class="btn btn-sm btn-outline-primary" data-add-source title="Add source">
+                <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                <span class="d-none d-sm-inline">Source</span>
+              </button>
+              <button class="btn btn-sm btn-outline-danger" data-delete title="Delete import">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="text-body-secondary small mt-2 d-none" data-sources-empty>No sources yet. Add a web calendar or upload a file.</div>
+        <div class="mt-2" data-sources></div>
+      </div>
+    </template>
+
+    <!-- One line always: radio, type icon (clickable, opens the edit modal),
+         label, and a right-aligned edit/delete button group that's simply
+         hidden below sm rather than reflowed. Stats sit on their own line
+         below. No fixed pixel widths -- the icon button and label size to
+         their content and Bootstrap's flex/gap utilities handle spacing at
+         every width. -->
+    <template id="template-source-row">
+      <div class="p-2 rounded">
+        <div class="d-flex align-items-center gap-2">
+          <input class="form-check-input flex-shrink-0 mt-0" type="radio" data-activate />
+          <button type="button" class="btn btn-sm p-1 flex-shrink-0 border-0 bg-transparent" data-open-edit>
+            <i data-icon></i>
+          </button>
+          <span class="flex-grow-1 text-break" style="min-width: 0" data-label></span>
+          <div class="btn-group flex-shrink-0 d-none d-sm-flex" data-actions>
+            <button class="btn btn-sm btn-outline-secondary" data-edit title="View source details">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-danger" data-delete-source title="Remove source">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        </div>
+        <div class="text-body-secondary small ps-4" data-stats></div>
+      </div>
+    </template>
+
+    <template id="template-snapshot-row">
+      <div class="d-flex align-items-center gap-2 flex-wrap py-2 border-bottom">
+        <span class="small" data-fetched-at></span>
+        <span class="badge text-bg-secondary d-none" data-latest-badge>Latest</span>
+        <span class="text-body-secondary small" data-stats></span>
+        <div class="dropdown ms-auto">
+          <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"><i class="fa-solid fa-copy me-1"></i>Save as...</button>
+          <ul class="dropdown-menu dropdown-menu-end" data-target-list>
+            <li>
+              <a class="dropdown-item" data-download-button download><i class="fa-solid fa-download me-1"></i>Download</a>
+            </li>
+            <li><hr class="dropdown-divider" /></li>
+          </ul>
+        </div>
+      </div>
+    </template>
+
+    <!-- Generic "<name>" dropdown item, reused for both the snapshot
+         "save as file to..." target list and the file source's "copy to..."
+         target list. -->
+    <template id="template-dropdown-target-item">
+      <li><button class="dropdown-item text-truncate" data-target-button></button></li>
+    </template>
+
+    <template id="template-export-item">
+      <div class="list-group-item">
+        <div class="d-flex align-items-center gap-2">
+          <strong class="flex-grow-1 text-break" data-name></strong>
+          <i class="fa-solid fa-triangle-exclamation text-warning d-none" data-duplicate-warning></i>
+          <span class="badge text-bg-secondary d-none" data-badge-unpublished><i class="fa-solid fa-pause me-1"></i>Unpublished</span>
+          <span class="badge text-bg-secondary d-none" data-badge-protected><i class="fa-solid fa-lock me-1"></i>Protected</span>
+          <span class="badge text-bg-secondary d-none" data-badge-public><i class="fa-solid fa-lock-open me-1"></i>Public</span>
+          <div class="btn-group">
+            <button class="btn btn-sm btn-outline-secondary" data-edit title="Edit">
+              <i class="fa-solid fa-pen"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-danger" data-delete title="Delete">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        </div>
+        <div class="text-body-secondary small mt-1 text-break" data-description></div>
+        <div class="text-body-secondary small" data-stats></div>
+        <div class="d-flex align-items-center gap-2 mt-1 d-none" data-link-row>
+          <a href="#" target="_blank" rel="noopener" class="text-body-secondary small text-truncate" data-link></a>
+          <button class="btn btn-sm btn-outline-secondary" data-copy-button title="Copy link">
+            <i class="fa-solid fa-copy"></i>
+          </button>
+        </div>
+      </div>
+    </template>
+
+    <template id="template-board-item">
+      <div class="list-group-item">
+        <div class="d-flex align-items-center gap-2">
+          <strong class="flex-grow-1 text-break" data-name></strong>
+          <span class="badge text-bg-secondary d-none" data-badge-unpublished><i class="fa-solid fa-pause me-1"></i>Unpublished</span>
+          <span class="badge text-bg-secondary d-none" data-badge-protected><i class="fa-solid fa-lock me-1"></i>Protected</span>
+          <span class="badge text-bg-secondary d-none" data-badge-public><i class="fa-solid fa-lock-open me-1"></i>Public</span>
+          <div class="btn-group">
+            <button class="btn btn-sm btn-outline-secondary" data-edit title="Edit">
+              <i class="fa-solid fa-pen"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-danger" data-delete title="Delete">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        </div>
+        <div class="text-body-secondary small mt-1 text-break" data-description></div>
+        <div class="text-body-secondary small" data-stats></div>
+        <div class="d-flex align-items-center gap-2 mt-1 d-none" data-link-row>
+          <a href="#" target="_blank" rel="noopener" class="text-body-secondary small text-truncate" data-link></a>
+          <button class="btn btn-sm btn-outline-secondary" data-copy-button title="Copy link">
+            <i class="fa-solid fa-copy"></i>
+          </button>
+        </div>
+      </div>
+    </template>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/combine/npm/dayjs@1.11.10/dayjs.min.js,npm/dayjs@1.11.10/plugin/relativeTime.js,npm/dayjs@1.11.10/plugin/localizedFormat.js,npm/dayjs@1.11.10/locale/de.js"></script>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

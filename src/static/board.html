@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <title>Calendar Manager - Board</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.3.1/css/all.min.css" rel="stylesheet" />
+  </head>
+  <body class="d-flex flex-column min-vh-100">
+    <div id="loading-screen" class="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center bg-body" style="z-index: 2000">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading…</span>
+      </div>
+    </div>
+
+    <nav class="navbar navbar-expand border-bottom">
+      <div class="container-fluid">
+        <a href="/" class="navbar-brand mb-0 h1 text-decoration-none"><i class="fa-solid fa-calendar-days me-2"></i>Calendar Manager</a>
+      </div>
+    </nav>
+
+    <main class="container py-4 flex-grow-1 d-none" id="content">
+      <div class="mb-4">
+        <h1 class="h3 mb-1" id="board-name"></h1>
+        <p class="text-body-secondary" id="board-description"></p>
+      </div>
+      <p class="text-body-secondary d-none" id="calendars-empty">No calendars published on this board yet.</p>
+      <div id="calendars-list" class="d-flex flex-column gap-3"></div>
+    </main>
+
+    <main class="container py-5 flex-grow-1 d-flex align-items-center justify-content-center d-none" id="error-state">
+      <div class="text-center">
+        <i class="fa-solid fa-lock fa-2x text-body-secondary mb-3"></i>
+        <h1 class="h4 mb-2">Board unavailable</h1>
+        <p class="text-body-secondary" id="error-message"></p>
+        <a href="/" class="btn btn-outline-secondary btn-sm">Go home</a>
+      </div>
+    </main>
+
+    <div id="toast-root" class="toast-container position-fixed bottom-0 end-0 p-3"></div>
+
+    <template id="template-calendar-card">
+      <div class="card">
+        <div class="card-body">
+          <h2 class="h6 mb-1" data-name></h2>
+          <p class="text-body-secondary small mb-2 d-none" data-description></p>
+          <p class="small font-monospace mb-2 d-none" data-rule-text></p>
+          <p class="text-body-secondary small mb-2" data-stats></p>
+          <div class="d-flex align-items-center gap-2 d-none" data-link-row>
+            <a href="#" class="text-body-secondary small text-truncate" style="max-width: 60%" data-link></a>
+            <button class="btn btn-sm btn-primary" data-copy title="Copy link">
+              <i class="fa-solid fa-copy"></i>
+            </button>
+            <a class="btn btn-sm btn-outline-secondary" data-download><i class="fa-solid fa-download me-1"></i>Download</a>
+          </div>
+          <p class="text-body-secondary small mb-0 d-none" data-no-link-row>No public link set yet.</p>
+        </div>
+      </div>
+    </template>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/board.js"></script>
+  </body>
+</html>

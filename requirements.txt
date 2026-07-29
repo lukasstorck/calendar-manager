@@ -1,0 +1,10 @@
+fastapi==0.141.1
+uvicorn[standard]==0.52.0
+authlib==1.7.2
+itsdangerous==2.2.0
+httpx==0.28.1
+sqlalchemy==2.0.51
+asyncpg==0.31.0
+icalendar==7.2.2
+python-dateutil==2.9.0.post0
+python-multipart==0.0.32
