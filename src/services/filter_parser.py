@@ -251,7 +251,7 @@ def trim_long_overlaps(events: list[dict]) -> None:
     key=lambda e: e['start'],
   )
   for ev in dated:
-    if ev['end'] - ev['start'] <= LONG_EVENT_THRESHOLD:
+    if ev['end'] - ev['start'] < LONG_EVENT_THRESHOLD:
       continue
     overlap_starts = [other['start'] for other in dated if other is not ev and ev['start'] < other['start'] < ev['end']]
     if not overlap_starts:
