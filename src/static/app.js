@@ -851,6 +851,8 @@ const SPECIALS = [
   "nextyear()",
 ];
 
+const TRANSFORM_PREDICATES = ["trim-long-overlaps", "remove"];
+
 // This builds markup from arbitrary, unbounded user-typed rule text (the
 // filter DSL): the number and kind of highlight spans depend entirely on
 // what's been typed, so there's no fixed template that could describe it.
@@ -876,7 +878,8 @@ function highlightRule(text) {
           return `<span class="token-value">${escapeHtml(value)}</span>`;
         })
         .join('<span class="token-colon">,</span>');
-      return `${isNegated ? '<span class="token-negated">-</span>' : ""}<span class="token-predicate">${escapeHtml(name)}</span><span class="token-colon">:</span>${values}`;
+      const predicateClass = TRANSFORM_PREDICATES.includes(name) ? "token-transform" : "token-predicate";
+      return `${isNegated ? '<span class="token-negated">-</span>' : ""}<span class="${predicateClass}">${escapeHtml(name)}</span><span class="token-colon">:</span>${values}`;
     })
     .join("");
 }

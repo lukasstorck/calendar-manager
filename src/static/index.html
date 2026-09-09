@@ -10,6 +10,9 @@
       .token-predicate {
         color: #6ea8fe;
       }
+      .token-transform {
+        color: #a370f7;
+      }
       .token-negated {
         color: #ea868f;
       }
@@ -280,7 +283,7 @@
                 class="form-control font-monospace"
                 rows="3"
                 spellcheck="false"
-                placeholder="e.g. from:today() title-contains:standup,sync -calendar-name-contains:personal"
+                placeholder="e.g. from:today() title-contains:standup,sync -calendar-name-contains:personal trim-long-overlaps:true remove:description"
               ></textarea>
               <div class="form-text font-monospace" id="export-rule-preview"></div>
               <div class="invalid-feedback" id="export-rule-error"></div>

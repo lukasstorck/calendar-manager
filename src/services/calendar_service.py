@@ -74,6 +74,7 @@ def parse_calendar(content: bytes, calendar_name: str = '') -> tuple[list[dict],
     location = str(component.get('location', ''))
     description = str(component.get('description', ''))
     uid = str(component.get('uid', ''))
+    source_calendar = str(component.get('x-source-calendar', '')) or calendar_name
 
     events.append(
       {
@@ -83,7 +84,7 @@ def parse_calendar(content: bytes, calendar_name: str = '') -> tuple[list[dict],
         'description': description,
         'start': start,
         'end': end,
-        'calendar_name': calendar_name,
+        'calendar_name': source_calendar,
         'raw': component,
       }
     )
@@ -94,17 +95,25 @@ def parse_calendar(content: bytes, calendar_name: str = '') -> tuple[list[dict],
   return events, range_start, range_end
 
 
-def build_calendar(events: list[dict], calendar_name: str = 'Filtered Calendar') -> str:
+def build_calendar(
+  events: list[dict],
+  calendar_name: str = 'Filtered Calendar',
+  remove_properties: list[str] | None = None,
+) -> str:
   logger.info(f'Building calendar with {len(events)} events')
+  remove_properties = remove_properties or []
+
   calendar = icalendar.Calendar()
   calendar.add('prodid', '-//Calendar Manager//calmgr//')  # TODO: check correct format
   calendar.add('version', '2.0')
   calendar.add('x-wr-calname', calendar_name)  # TODO: check use, calendar gateway uses similar field for original calendar name
 
+  components = []
   for event in events:
     raw = event.get('raw')
     if raw is not None:
       calendar.add_component(raw)
+      components.append(raw)
     else:
       vevent = icalendar.Event()
       vevent.add('summary', event.get('title', ''))
@@ -118,5 +127,14 @@ def build_calendar(events: list[dict], calendar_name: str = 'Filtered Calendar')
         vevent.add('description', event['description'])
       vevent.add('uid', event.get('uid') or event.get('title', 'event'))
       calendar.add_component(vevent)
+      components.append(vevent)
+
+  # remove specified properties
+  for key in remove_properties:
+    if key in calendar:
+      del calendar[key]
+    for comp in components:
+      if key in comp:
+        del comp[key]
 
   return calendar.to_ical().decode('utf-8')

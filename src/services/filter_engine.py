@@ -46,6 +46,7 @@ async def run_filter(db: AsyncSession, export: CalendarExport, now: datetime | N
 
   all_events: list[dict] = []
   if source_ids and parsed.valid:
+    filtering_predicates = [p for p in parsed.predicates if p.name not in filter_parser.TRANSFORM_PREDICATES]
     calendar_imports = await database_requests.get_imports_for_export(db, export.id)
     for calendar_import in calendar_imports:
       # Not calendar_import.active_source / active_source.static_file -- those are lazy
@@ -74,10 +75,16 @@ async def run_filter(db: AsyncSession, export: CalendarExport, now: datetime | N
         logger.error(f'Invalid calendar file: {exc}')
         continue
       for ev in events:
-        if filter_parser.matches(ev, parsed.predicates, now):
+        if filter_parser.matches(ev, filtering_predicates, now):
           all_events.append(ev)
 
-  output_ics = calendar_service.build_calendar(all_events, calendar_name=export.name)
+  transform_names = {p.name for p in parsed.predicates if p.name in filter_parser.TRANSFORM_PREDICATES}
+  if 'trim-long-overlaps' in transform_names:
+    filter_parser.trim_long_overlaps(all_events)
+
+  remove_keys = [v for p in parsed.predicates if p.name == 'remove' for v in p.values]
+
+  output_ics = calendar_service.build_calendar(all_events, calendar_name=export.name, remove_properties=remove_keys)
   event_count = len(all_events)
 
   cache = CalendarExportCache(dedup_key=dedup_key, output_ics=output_ics, event_count=event_count)

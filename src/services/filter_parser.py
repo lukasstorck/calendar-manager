@@ -21,7 +21,9 @@ import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-SINGLE_ONLY = {'from', 'to'}
+import icalendar
+
+SINGLE_ONLY = {'from', 'to', 'trim-long-overlaps'}
 TEXT_PREDICATES = {
   'title-contains',
   'location-contains',
@@ -29,7 +31,23 @@ TEXT_PREDICATES = {
   'calendar-name-contains',
 }
 DATE_PREDICATES = {'from', 'to'}
-ALL_PREDICATES = TEXT_PREDICATES | DATE_PREDICATES
+TRANSFORM_PREDICATES = {'trim-long-overlaps', 'remove'}
+FLAG_PREDICATES = {'trim-long-overlaps'}
+ALL_PREDICATES = TEXT_PREDICATES | DATE_PREDICATES | TRANSFORM_PREDICATES
+
+# remove:<key> may name one of these standard properties instead of a custom
+# X- property. Checked case-insensitively against the user-supplied key.
+STANDARD_REMOVABLE_PROPERTIES = {'description', 'location', 'class'}
+
+
+def normalize_remove_key(key: str) -> str:
+  """'description'/'location' (any case) pass through as-is (lowercased);
+  anything else is treated as a custom property and becomes 'X-<KEY>'."""
+  lowered = key.lower()
+  if lowered in STANDARD_REMOVABLE_PROPERTIES:
+    return lowered
+  return f'X-{key.upper()}'
+
 
 SPECIAL_TIME_VALUES = {
   'today()',
@@ -109,7 +127,7 @@ def parse(rule_text: str) -> ParseResult:
     chunks.append((pos - len(buf), buf))
 
   for start, chunk in chunks:
-    m = re.fullmatch(r'(?P<neg>-)?(?P<name>[a-zA-Z][a-zA-Z-]*):(?P<value>.*)', chunk)
+    m = re.fullmatch(r'(?P<neg>-)?(?P<name>[a-zA-Z][a-zA-Z-]*)(?::(?P<value>.*))?', chunk)
     if not m:
       result.errors.append(ParseError(f"Cannot parse token '{chunk}'", start))
       continue
@@ -120,7 +138,14 @@ def parse(rule_text: str) -> ParseResult:
     if name not in ALL_PREDICATES:
       result.errors.append(ParseError(f"Unknown predicate '{name}'", start))
       continue
-    if not raw_value:
+
+    if raw_value is None:
+      # No colon at all, e.g. bare 'trim-long-overlaps'.
+      if name not in FLAG_PREDICATES:
+        result.errors.append(ParseError(f"Predicate '{name}' needs a value", start))
+        continue
+      raw_value = 'true'
+    elif not raw_value:
       result.errors.append(ParseError(f"Predicate '{name}' needs a value", start))
       continue
 
@@ -144,6 +169,13 @@ def parse(rule_text: str) -> ParseResult:
           continue
         if not _is_valid_datetime(value):
           result.errors.append(ParseError(f"'{value}' is not a valid date/time or special value for '{name}'", start))
+
+    if name == 'trim-long-overlaps' and values != ['true']:
+      result.errors.append(ParseError(f"Predicate '{name}' only accepts 'true'", start))
+      continue
+
+    if name == 'remove':
+      values = [normalize_remove_key(v) for v in values]
 
     result.predicates.append(Predicate(name=name, negated=negated, values=values, raw=chunk))
 
@@ -205,6 +237,30 @@ def _add_months(d: datetime, delta: int) -> datetime:
   year = d.year + month // 12
   month = month % 12 + 1
   return d.replace(year=year, month=month)
+
+
+LONG_EVENT_THRESHOLD = timedelta(hours=24)
+
+
+def trim_long_overlaps(events: list[dict]) -> None:
+  """For events longer than 24h, if they overlap a later-starting event,
+  cut the long event's end to that later event's start. Mutates in place,
+  including the raw VEVENT component so the change survives to export."""
+  dated = sorted(
+    (e for e in events if e.get('start') and e.get('end')),
+    key=lambda e: e['start'],
+  )
+  for ev in dated:
+    if ev['end'] - ev['start'] <= LONG_EVENT_THRESHOLD:
+      continue
+    overlap_starts = [other['start'] for other in dated if other is not ev and ev['start'] < other['start'] < ev['end']]
+    if not overlap_starts:
+      continue
+    new_end = min(overlap_starts)
+    ev['end'] = new_end
+    raw = ev.get('raw')
+    if raw is not None:
+      raw['dtend'] = icalendar.vDDDTypes(new_end)
 
 
 def matches(event: dict, predicates: list[Predicate], now: datetime | None = None) -> bool:
