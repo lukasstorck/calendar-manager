@@ -35,6 +35,9 @@ services:
     ports:
       - "8000:8000"
 
+    command: ["uvicorn", "src.server:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--log-level", "$LOG_LEVEL"]
+    # command: ["uvicorn", "src.server:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log", "--log-level", "$LOG_LEVEL"]  # for production
+
     environment:
       LOG_LEVEL: ${LOG_LEVEL:?}
       BASE_URL: ${BASE_URL:?}
