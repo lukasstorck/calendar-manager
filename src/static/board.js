@@ -24,27 +24,21 @@ function pluralize(count, word) {
   return `${count} ${word}${count === 1 ? "" : "s"}`;
 }
 
-function renderCalendarCard(c) {
+function renderCalendarCard(export_) {
   const tpl = document.getElementById("template-calendar-card");
   const node = tpl.content.firstElementChild.cloneNode(true);
 
-  node.querySelector("[data-name]").textContent = c.name;
+  node.querySelector("[data-name]").textContent = export_.name;
 
   const descEl = node.querySelector("[data-description]");
-  if (c.description) {
-    descEl.textContent = c.description;
+  if (export_.description) {
+    descEl.textContent = export_.description;
     descEl.classList.remove("d-none");
   }
 
-  const ruleEl = node.querySelector("[data-rule-text]");
-  if (c.rule_text) {
-    ruleEl.textContent = c.rule_text;
-    ruleEl.classList.remove("d-none");
-  }
+  node.querySelector("[data-stats]").textContent = `${pluralize(export_.event_count, "event")} \u00b7 updated ${fmtDateTime(export_.updated_at)}`;
 
-  node.querySelector("[data-stats]").textContent = `${pluralize(c.event_count, "event")} \u00b7 updated ${fmtDateTime(c.last_output_change_at)}`;
-
-  const link = c.download_link ? `${window.location.origin}${c.download_link}` : null;
+  const link = export_.download_link ? `${window.location.origin}${export_.download_link}` : null;
 
   if (link) {
     const linkRow = node.querySelector("[data-link-row]");

@@ -807,7 +807,9 @@ function renderExportItem(export_) {
 
   div.querySelector("[data-name]").textContent = export_.name;
 
+  // TODO: detect duplicates client side by comparing sources and their filter / transform settings and global transform
   const warnEl = div.querySelector("[data-duplicate-warning]");
+  // TODO: outdated, server no longer sends this information
   if (export_.duplicate_warning) {
     warnEl.classList.remove("d-none");
     warnEl.title = `Same rule as: ${export_.duplicate_warning.map((d) => d.name).join(", ")}`;
@@ -815,7 +817,7 @@ function renderExportItem(export_) {
 
   div.querySelector("[data-description]").textContent = export_.description || "No description";
   div.querySelector("[data-stats]").textContent =
-    `${pluralize(export_.input_count, "input calendar")} \u00b7 ${pluralize(export_.output_count, "event")} \u00b7 updated ${formatTimestamp(export_.last_output_change_at)}`;
+    `${pluralize(export_.sources.length, "input calendar")} \u00b7 ${pluralize(export_.event_count, "event")} \u00b7 updated ${formatTimestamp(export_.updated_at)}`;
 
   const { maskedLink, link } = generateCalendarExportLinks(export_);
   if (export_.published) {
@@ -836,52 +838,93 @@ function renderExportItem(export_) {
   return div;
 }
 
-const SPECIALS = [
-  "today()",
-  "tomorrow()",
-  "yesterday()",
-  "thisweek()",
-  "lastweek()",
-  "nextweek()",
-  "thismonth()",
-  "lastmonth()",
-  "nextmonth()",
-  "thisyear()",
-  "lastyear()",
-  "nextyear()",
-];
+// Reference data shown in the "Sources" info popover, and used to derive the
+// filter/transform inputs' placeholder text: available fields to filter on,
+// and available transform commands, each keyed by name with a short
+// human-readable description as the value.
+//
+// This is wrapped in getPredicateInfo() rather than being static top-level
+// consts because it's expected to eventually come from the server (once the
+// backend defines what predicates/transforms it actually supports); callers
+// don't need to change when that happens, just this function's body. Until
+// then, the object below is built once on first call and cached, so
+// opening/closing the popover or re-rendering source blocks never rebuilds
+// it or recomputes the derived placeholder strings.
+let _predicateInfoCache = null;
+function getPredicateInfo() {
+  if (_predicateInfoCache) return _predicateInfoCache;
 
-const TRANSFORM_PREDICATES = ["trim-long-overlaps", "remove"];
+  // TODO: replace with data fetched from the server once it exposes the
+  // supported predicates/transforms; the shape below (dicts of name ->
+  // description, keyed the same way) is what the rest of this file expects.
+  const filterFields = {
+    title: "Event title (text)",
+    location: "Event location (text)",
+    description: "Event description (text)",
+    start_time: "Event start, ISO 8601 timestamp",
+    end_time: "Event end, ISO 8601 timestamp",
+    calendar_name: "Name of the source calendar this event came from",
+  };
+  const transformCommands = {
+    "SET <field> = <value>": "Overwrite a field on the event (e.g. SET description = NULL)",
+    "REMOVE <field>": "Delete a field from the event",
+    "CLIP DURATION <min> <max>": "Shorten or extend the event so its duration falls within the given range",
+  };
 
-// This builds markup from arbitrary, unbounded user-typed rule text (the
-// filter DSL): the number and kind of highlight spans depend entirely on
-// what's been typed, so there's no fixed template that could describe it.
-// It stays as a dedicated syntax highlighter rather than a static template;
-// every literal piece of user text still goes in via escapeHtml, so nothing
-// unescaped ever reaches innerHTML.
-function escapeHtml(s) {
-  return (s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  // Placeholder text is derived from the dicts above (rather than written
+  // out separately) so it can't drift out of sync with the supported
+  // fields/commands.
+  _predicateInfoCache = {
+    filterFields,
+    transformCommands,
+    filterPlaceholder: `e.g. ${Object.keys(filterFields)[0]} LIKE '%value%'`,
+    transformPlaceholder: `e.g. ${Object.keys(transformCommands)[0]}`,
+  };
+  return _predicateInfoCache;
 }
 
-function highlightRule(text) {
-  return text
-    .split(/(\s+)/)
-    .map((token) => {
-      if (!token.trim()) return token;
-      const match = token.match(/^(-)?([a-zA-Z-]+):(.*)$/);
-      if (!match) return `<span class="token-value">${escapeHtml(token)}</span>`;
-      const [, isNegated, name, value] = match;
-      const values = value
-        .split(",")
-        .map((value) => {
-          if (SPECIALS.includes(value.toLowerCase())) return `<span class="tok-special" title="${value}">${escapeHtml(value)}</span>`;
-          return `<span class="token-value">${escapeHtml(value)}</span>`;
-        })
-        .join('<span class="token-colon">,</span>');
-      const predicateClass = TRANSFORM_PREDICATES.includes(name) ? "token-transform" : "token-predicate";
-      return `${isNegated ? '<span class="token-negated">-</span>' : ""}<span class="${predicateClass}">${escapeHtml(name)}</span><span class="token-colon">:</span>${values}`;
-    })
-    .join("");
+// Appends one <li> (from template-info-list-item) per dict entry into ulEl.
+function populateInfoList(ulEl, dict) {
+  for (const [key, desc] of Object.entries(dict)) {
+    const item = cloneTemplate("template-info-list-item");
+    item.querySelector("[data-key]").textContent = key;
+    item.querySelector("[data-desc]").textContent = desc;
+    ulEl.appendChild(item);
+  }
+}
+
+// Builds the Sources info popover's content DOM once and caches it (same
+// reasoning as getPredicateInfo() above): Bootstrap calls this again every
+// time the popover is shown, but there's no need to rebuild the list markup
+// each time since the underlying predicate info hasn't changed.
+let _sourcesInfoContentCache = null;
+function getSourcesInfoContent() {
+  if (_sourcesInfoContentCache) return _sourcesInfoContentCache;
+  const { filterFields, transformCommands } = getPredicateInfo();
+  const content = cloneTemplate("template-sources-info-popover");
+  populateInfoList(content.querySelector("[data-filter-fields-list]"), filterFields);
+  populateInfoList(content.querySelector("[data-transform-commands-list]"), transformCommands);
+  _sourcesInfoContentCache = content;
+  return content;
+}
+
+// One-time setup for the Sources info popover: hover previews it on
+// desktop; trigger also includes "focus" so a tap on mobile (which focuses
+// the button, since it's a <button>) shows it too, and tapping elsewhere
+// (which blurs it) closes it again -- Bootstrap handles that dismissal
+// automatically for the focus trigger, no manual listeners needed.
+function setupSourcesInfoPopover() {
+  const infoButton = document.getElementById("export-sources-info-button");
+  if (infoButton.dataset.infoPopoverWired) return; // boot() can run more than once (e.g. after OAuth login); wire listeners only once
+  infoButton.dataset.infoPopoverWired = "true";
+
+  bootstrap.Popover.getOrCreateInstance(infoButton, {
+    html: true,
+    trigger: "hover focus",
+    placement: "bottom",
+    title: "", // no popover-header: the button has no `title` attribute to fall back to, and this makes that explicit
+    content: getSourcesInfoContent,
+  });
 }
 
 function updateModalLinkDisplay(export_) {
@@ -893,6 +936,85 @@ function updateModalLinkDisplay(export_) {
     masked: maskedLink,
     target: link,
   });
+}
+
+// Local state for the source blocks currently shown in the export modal.
+// Each entry: { localId, import_id, filter, transform }. `localId` is a
+// client-only key used to find/update/remove a block's DOM element and its
+// backing state entry -- it never leaves the browser. Order in this array is
+// the same order the blocks render in, top to bottom, and is meaningful: when
+// events from different sources share an id after filtering, later sources
+// (further down the list) overwrite earlier ones.
+let exportEditModalSources = [];
+let exportEditModalSourceLocalIdCounter = 0;
+
+function nextSourceLocalId() {
+  exportEditModalSourceLocalIdCounter += 1;
+  return `src-${exportEditModalSourceLocalIdCounter}`;
+}
+
+function importNameFor(importId) {
+  const imp = importsCache.find((i) => i.id === importId);
+  return imp ? imp.name : "(deleted import)";
+}
+
+// Rebuilds the whole sources list in the DOM from exportEditModalSources.
+// Called after every add/remove; individual field edits patch their own
+// textarea's state entry directly instead of triggering a full re-render, so
+// the user never loses cursor position while typing.
+function renderExportSourceBlocks(scheduleSave) {
+  const sourcesDiv = document.getElementById("export-sources");
+  sourcesDiv.querySelectorAll("[data-source-block]").forEach((el) => el.remove());
+  document.getElementById("export-sources-empty").classList.toggle("d-none", exportEditModalSources.length > 0);
+
+  for (const source of exportEditModalSources) {
+    const block = cloneTemplate("template-export-source-block");
+    block.dataset.localId = source.localId;
+    block.querySelector("[data-source-title]").textContent = importNameFor(source.import_id);
+
+    const filterInput = block.querySelector("[data-source-filter]");
+    filterInput.placeholder = getPredicateInfo().filterPlaceholder;
+    filterInput.value = source.filter || "";
+    filterInput.oninput = () => {
+      source.filter = filterInput.value;
+      scheduleSave();
+    };
+
+    const transformInput = block.querySelector("[data-source-transform]");
+    transformInput.placeholder = getPredicateInfo().transformPlaceholder;
+    transformInput.value = source.transform || "";
+    transformInput.oninput = () => {
+      source.transform = transformInput.value;
+      scheduleSave();
+    };
+
+    block.querySelector("[data-remove-source]").addEventListener("click", () => {
+      exportEditModalSources = exportEditModalSources.filter((s) => s.localId !== source.localId);
+      renderExportSourceBlocks(scheduleSave);
+      scheduleSave();
+    });
+
+    sourcesDiv.appendChild(block);
+  }
+}
+
+// Populates the "Add source" dropdown from importsCache. Every import is
+// always offered, even ones already used by an existing block -- the same
+// import can be added as a source more than once, each with its own
+// filter/transform.
+function renderAddSourceMenu(onAdd) {
+  const menu = document.getElementById("export-add-source-menu");
+  menu.querySelectorAll("[data-import-option]").forEach((el) => el.remove());
+  document.getElementById("export-add-source-menu-empty").classList.toggle("d-none", importsCache.length > 0);
+
+  for (const imp of importsCache) {
+    const item = cloneTemplate("template-dropdown-target-item");
+    item.dataset.importOption = "true";
+    const button = item.querySelector("[data-target-button]");
+    button.textContent = imp.name;
+    button.addEventListener("click", () => onAdd(imp.id));
+    menu.appendChild(item);
+  }
 }
 
 async function openExportModal(exportId) {
@@ -909,30 +1031,19 @@ async function openExportModal(exportId) {
   document.getElementById("export-link-name-error").textContent = "";
   document.getElementById("export-protected").checked = exportData.protected;
   document.getElementById("export-published").checked = exportData.published;
-  document.getElementById("export-rule-error").textContent = "";
   document.getElementById("save-status").textContent = "All changes saved";
   updateModalLinkDisplay(exportData);
 
-  const sourcesDiv = document.getElementById("export-sources");
-  sourcesDiv.querySelectorAll("[data-checkbox-row]").forEach((el) => el.remove());
-  document.getElementById("export-sources-empty").classList.toggle("d-none", importsCache.length > 0);
-  for (const imp of importsCache) {
-    const row = cloneTemplate("template-checkbox-row");
-    const checkbox = row.querySelector("[data-checkbox]");
-    checkbox.id = `chk-${imp.id}`;
-    checkbox.value = imp.id;
-    checkbox.checked = (exportData.import_ids || []).includes(imp.id);
-    const label = row.querySelector("[data-label]");
-    label.htmlFor = checkbox.id;
-    label.textContent = imp.name;
-    sourcesDiv.appendChild(row);
-  }
-
-  const ruleTextarea = document.getElementById("export-rule");
-  ruleTextarea.value = exportData.rule_text || "";
-  const preview = document.getElementById("export-rule-preview");
-  const renderPreview = () => (preview.innerHTML = highlightRule(ruleTextarea.value) || "&nbsp;");
-  renderPreview();
+  // Seed local state from whatever the backend gives us for per-source
+  // config. Until the backend implements this, `sources` will simply be
+  // absent/empty and the modal opens with the empty-box placeholder.
+  exportEditModalSourceLocalIdCounter = 0;
+  exportEditModalSources = (exportData.sources || []).map((source) => ({
+    localId: nextSourceLocalId(),
+    import_id: source.import_id,
+    filter: source.filter || "",
+    transform: source.transform || "",
+  }));
 
   function scheduleSave() {
     exportEditModalDirty = true;
@@ -941,16 +1052,18 @@ async function openExportModal(exportId) {
     exportEditModalSaveTimer = setTimeout(() => saveExport(exportId), 900);
   }
 
+  renderExportSourceBlocks(scheduleSave);
+  renderAddSourceMenu((importId) => {
+    exportEditModalSources.push({ localId: nextSourceLocalId(), import_id: importId, filter: "", transform: "" });
+    renderExportSourceBlocks(scheduleSave);
+    scheduleSave();
+  });
+
   document.getElementById("export-name").oninput = scheduleSave;
   document.getElementById("export-description").oninput = scheduleSave;
   document.getElementById("export-link-name").oninput = scheduleSave;
   document.getElementById("export-protected").onchange = scheduleSave;
   document.getElementById("export-published").onchange = scheduleSave;
-  ruleTextarea.oninput = () => {
-    renderPreview();
-    scheduleSave();
-  };
-  sourcesDiv.onchange = scheduleSave;
 
   exportEditModal.show();
 }
@@ -966,8 +1079,13 @@ async function saveExport(exportId) {
     link_name: document.getElementById("export-link-name").value.trim(),
     protected: document.getElementById("export-protected").checked,
     published: document.getElementById("export-published").checked,
-    rule_text: document.getElementById("export-rule").value,
-    import_ids: Array.from(document.querySelectorAll("#export-sources input[type=checkbox]:checked")).map((c) => c.value),
+    // Per-source config: one entry per source block, in display order (top
+    // to bottom). `where` is the SQL WHERE-clause body used to select that
+    // source's events; `transform` is the (ordered, event-level-only) list
+    // of transformations applied afterward. Order matters beyond display:
+    // sources are combined and, on duplicate event ids, the entry from the
+    // later source in this array wins.
+    sources: exportEditModalSources.map(({ import_id, filter, transform }) => ({ import_id, filter, transform })),
   };
   const resp = await api(`/api/exports/${exportId}`, {
     method: "PATCH",
@@ -975,7 +1093,6 @@ async function saveExport(exportId) {
     body: JSON.stringify(payload),
   });
   const statusEl = document.getElementById("save-status");
-  const ruleErrEl = document.getElementById("export-rule-error");
   const nameInput = document.getElementById("export-name");
   const nameErrEl = document.getElementById("export-name-error");
   const pubErrEl = document.getElementById("export-link-name-error");
@@ -1002,9 +1119,6 @@ async function saveExport(exportId) {
   pubErrEl.textContent = "";
   pubInput.classList.remove("is-invalid");
   const updated = await resp.json();
-  const ruleErrs = (updated.rule_errors || []).map((event) => event.message).join("; ");
-  ruleErrEl.textContent = ruleErrs;
-  document.getElementById("export-rule").classList.toggle("is-invalid", !!ruleErrs);
   updateModalLinkDisplay(updated);
   statusEl.textContent = "All changes saved";
   exportEditModalDirty = false;
@@ -1315,6 +1429,7 @@ async function boot() {
   importWizardModal = importWizardModal || bootstrap.Modal.getOrCreateInstance(document.getElementById("import-wizard-modal"));
   importSourceEditModal = importSourceEditModal || bootstrap.Modal.getOrCreateInstance(document.getElementById("source-edit-modal"));
   boardEditModal = boardEditModal || bootstrap.Modal.getOrCreateInstance(document.getElementById("board-modal"));
+  setupSourcesInfoPopover();
 
   document.getElementById("loading-screen").classList.remove("d-none");
 

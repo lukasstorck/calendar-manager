@@ -158,9 +158,7 @@ class CalendarExport(Base):
   """A generated calendar output from a set of import sources and an applied filter rule.
 
   An export can be published via the unique public name with or without token protection.
-  Stats and the generated output are cached and saved via dedup_key, a hash of the sorted
-  source ids and the normalized filter rule. It is used to generate calendars with the
-  same inputs only once across all exports and users.
+  Stats and the generated output are cached.
   """
 
   __tablename__ = 'calendar_exports'
@@ -173,22 +171,17 @@ class CalendarExport(Base):
   user_id: Mapped[str] = mapped_column(String(300), ForeignKey('users.id', ondelete='CASCADE'))
   name: Mapped[str] = mapped_column(String(200))
   description: Mapped[str | None] = mapped_column(Text, nullable=True)
-  link_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
-  rule_text: Mapped[str] = mapped_column(Text, default='')
-  show_rule_in_description: Mapped[bool] = mapped_column(Boolean, default=True)
+  link_name: Mapped[str] = mapped_column(String(100))
 
   published: Mapped[bool] = mapped_column(Boolean, default=True)
   protected: Mapped[bool] = mapped_column(Boolean, default=True)
-  token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+  token: Mapped[str] = mapped_column(String(64))
 
-  dedup_key: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
-
-  last_output_count: Mapped[int] = mapped_column(Integer, default=0)
-  last_output_change_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-  last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
+  output_ics: Mapped[str] = mapped_column(Text, default='')
+  event_count: Mapped[int] = mapped_column(Integer, default=0)
   created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
   updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+  last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
   user: Mapped['User'] = relationship(back_populates='exports')
   sources: Mapped[list['CalendarExportSource']] = relationship(back_populates='calendar_export', cascade='all, delete-orphan')
@@ -196,32 +189,25 @@ class CalendarExport(Base):
 
 
 class CalendarExportSource(Base):
-  """Which calendar imports feed a given export"""
+  """Which calendar imports feed a given export and what filters and transforms are applied.
+
+  An export may have multiple sources, each with different filters and transforms.
+  Position (based on the UI) determines the priority for resulting events of a filtered source.
+  In case of duplicate UIDs, the source with the higher position wins and overwrites the others.
+  """
 
   __tablename__ = 'calendar_export_sources'
-  __table_args__ = (UniqueConstraint('export_id', 'import_id', name='uq_export_import'),)
 
   id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
   export_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('calendar_exports.id', ondelete='CASCADE'))
   import_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('calendar_imports.id', ondelete='CASCADE'))
+  position: Mapped[int] = mapped_column(Integer, default=0)
+
+  filter: Mapped[str] = mapped_column(Text, default='')
+  transform: Mapped[str] = mapped_column(Text, default='')
 
   calendar_export: Mapped['CalendarExport'] = relationship(back_populates='sources')
   calendar_import: Mapped['CalendarImport'] = relationship()
-
-
-class CalendarExportCache(Base):
-  """Cached information about a generated calendar export.
-
-  The dedup_key is a hash of the calendar export source ids and the normalized filter rule.
-  Multiple CalendarExport rows with the same dedup_key share this result.
-  """
-
-  __tablename__ = 'calendar_export_cache'
-
-  dedup_key: Mapped[str] = mapped_column(String(64), primary_key=True)
-  output_ics: Mapped[str] = mapped_column(Text, default='')
-  event_count: Mapped[int] = mapped_column(Integer, default=0)
-  updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
 class Board(Base):
@@ -235,15 +221,15 @@ class Board(Base):
 
   __tablename__ = 'boards'
   __table_args__ = (
-    UniqueConstraint('link_name', name='uq_board_link_name'),
     UniqueConstraint('user_id', 'name', name='uq_board_user_name'),
+    UniqueConstraint('link_name', name='uq_board_link_name'),
   )
 
   id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
   user_id: Mapped[str] = mapped_column(String(300), ForeignKey('users.id', ondelete='CASCADE'))
   name: Mapped[str] = mapped_column(String(100))
   description: Mapped[str | None] = mapped_column(Text, nullable=True)
-  link_name: Mapped[str | None] = mapped_column(String(100))
+  link_name: Mapped[str] = mapped_column(String(100))
 
   published: Mapped[bool] = mapped_column(Boolean, default=True)
   protected: Mapped[bool] = mapped_column(Boolean, default=True)

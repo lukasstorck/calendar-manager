@@ -28,10 +28,6 @@ def sanitize_text(text: str, disallowed_characters: re.Pattern, collapse_whitesp
   return sanitized
 
 
-# Used for anything that becomes part of a public URL path (board/export public
-# links). Deliberately restrictive: URL-safe characters only.
-REGEX_LINK_NAME = re.compile(r'^[a-zA-Z0-9.\-]{1,100}$')
-
 # Used for user-facing display names (import name, source label, board/export
 # name). More permissive than LINK_NAME -- these are never placed directly into
 # a URL path, so spaces and most punctuation are fine.
@@ -42,7 +38,6 @@ REGEX_DISPLAY_NAME = re.compile(rf'^[^{re.escape(_CONTROL_CHARS)}]{{1,200}}$')
 # use interchangeably with https for subscription links.
 URL = re.compile(r'^(http|https|webcal)://', re.IGNORECASE)
 
-LINK_NAME_ERROR = "must be 1-100 chars of a-z, A-Z, 0-9, '.' and '-'"
 DISPLAY_NAME_ERROR = 'must be 1-200 characters, and may not contain control characters'
 URL_ERROR = 'must be a valid http(s):// or webcal:// address'
 

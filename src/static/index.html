@@ -271,22 +271,34 @@
               </div>
             </div>
             <div class="mb-3">
-              <label class="form-label">Sources (from Imports)</label>
-              <div class="border rounded p-2 overflow-auto" style="max-height: 140px" id="export-sources">
-                <div id="export-sources-empty" class="text-body-secondary small d-none">No imports available yet.</div>
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <label class="form-label mb-0">Sources</label>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-link p-1 lh-1 text-body-secondary"
+                  id="export-sources-info-button"
+                  aria-label="Available fields and transforms"
+                >
+                  <i class="fa-solid fa-circle-info"></i>
+                </button>
+                <div class="dropdown ms-auto">
+                  <button
+                    class="btn btn-sm btn-outline-primary dropdown-toggle"
+                    type="button"
+                    id="export-add-source-button"
+                    data-bs-toggle="dropdown"
+                    aria-expanded="false"
+                  >
+                    <i class="fa-solid fa-plus me-1"></i>Add source
+                  </button>
+                  <ul class="dropdown-menu dropdown-menu-end" id="export-add-source-menu">
+                    <li><span class="dropdown-item-text text-body-secondary small" id="export-add-source-menu-empty">No imports available yet.</span></li>
+                  </ul>
+                </div>
               </div>
-            </div>
-            <div class="mb-3">
-              <label class="form-label" for="export-rule">Filter rule</label>
-              <textarea
-                id="export-rule"
-                class="form-control font-monospace"
-                rows="3"
-                spellcheck="false"
-                placeholder="e.g. from:today() title-contains:standup,sync -calendar-name-contains:personal trim-long-overlaps:true remove:description"
-              ></textarea>
-              <div class="form-text font-monospace" id="export-rule-preview"></div>
-              <div class="invalid-feedback" id="export-rule-error"></div>
+              <div class="border rounded p-2" style="max-height: 360px; overflow-y: auto" id="export-sources">
+                <div id="export-sources-empty" class="text-body-secondary small text-center py-3">No sources added yet.</div>
+              </div>
             </div>
           </div>
           <div class="modal-footer justify-content-between">
@@ -577,6 +589,50 @@
          target list. -->
     <template id="template-dropdown-target-item">
       <li><button class="dropdown-item text-truncate" data-target-button></button></li>
+    </template>
+
+    <!-- One row inside the Sources info popover, for one filter field or
+         transform command entry. -->
+    <template id="template-info-list-item">
+      <li><code data-key></code> &mdash; <span data-desc></span></li>
+    </template>
+
+    <!-- Content of the Sources info popover: static section headings, with
+         each <ul> populated at runtime from template-info-list-item so the
+         list itself is never built via innerHTML. -->
+    <template id="template-sources-info-popover">
+      <div>
+        <div class="small mb-2">
+          <strong>Filter fields</strong>
+          <ul class="ps-3 mb-0" data-filter-fields-list></ul>
+        </div>
+        <div class="small mb-2">
+          <strong>Transform commands</strong>
+          <ul class="ps-3 mb-0" data-transform-commands-list></ul>
+        </div>
+      </div>
+    </template>
+
+    <!-- One block per source in the export modal's Sources list. A source is
+         one import queried with its own SQL WHERE clause, then transformed.
+         The same import may appear in more than one block. -->
+    <template id="template-export-source-block">
+      <div class="border rounded p-2 mb-2" data-source-block>
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <strong class="flex-grow-1 text-break" data-source-title></strong>
+          <button type="button" class="btn btn-sm btn-outline-danger flex-shrink-0" data-remove-source title="Remove this source">
+            <i class="fa-solid fa-trash"></i>
+          </button>
+        </div>
+        <div class="input-group input-group-sm mb-2">
+          <span class="input-group-text" style="width: 5.5rem">Filter</span>
+          <input type="text" class="form-control font-monospace" spellcheck="false" data-source-filter />
+        </div>
+        <div class="input-group input-group-sm">
+          <span class="input-group-text" style="width: 5.5rem">Transform</span>
+          <input type="text" class="form-control font-monospace" spellcheck="false" data-source-transform />
+        </div>
+      </div>
     </template>
 
     <template id="template-export-item">

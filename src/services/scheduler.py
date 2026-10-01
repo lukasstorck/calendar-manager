@@ -3,29 +3,29 @@ from datetime import datetime, timezone
 
 import src.logging
 from src.core.config import REFRESH_INTERVAL_SECONDS
-from src.core.db import async_session
+from src.core.db import AsyncSession, async_session
 from src.models import Snapshot, WebSubscription
-from src.services import calendar_service, database_requests, filter_engine
+from src.services import calendar_service, database_requests
 
 logger = src.logging.logger
 
 
-async def refresh_web_subscription(db, subscription: WebSubscription) -> None:
+async def refresh_web_subscription(db: AsyncSession, subscription: WebSubscription) -> None:
   now = datetime.now(timezone.utc)
   try:
     content = await calendar_service.fetch_url(subscription.url)
-    events, range_start, range_end = calendar_service.parse_calendar(content)
-    file_hash = calendar_service.hash_content(content)
+    calendar = calendar_service.CalendarPipeline(content)
+    calendar_stats = calendar.stats()
 
-    snapshot = await database_requests.find_snapshot_by_hash(db, subscription.id, file_hash)
+    snapshot = await database_requests.find_snapshot_by_hash(db, subscription.id, calendar.hash)
     if snapshot is None:
       snapshot = Snapshot(
         web_subscription_id=subscription.id,
-        file_hash=file_hash,
+        file_hash=calendar.hash,
         raw_ics=content.decode('utf-8', errors='replace'),
-        event_count=len(events),
-        range_start=range_start,
-        range_end=range_end,
+        event_count=calendar_stats.event_count,
+        range_start=calendar_stats.range_start,
+        range_end=calendar_stats.range_end,
       )
       db.add(snapshot)
 
@@ -58,11 +58,11 @@ async def run_refresh_pass() -> None:
   async with async_session() as db:
     calendar_exports = await database_requests.get_all_exports(db)
     now = datetime.now(timezone.utc)
-    for calendar in calendar_exports:
+    for calendar_export in calendar_exports:
       try:
-        await filter_engine.run_filter(db, calendar, now)
+        await calendar_service.update_export_data(db, calendar_export, now)
       except Exception:
-        logger.exception(f'Failed to run export {calendar.id}')
+        logger.exception(f'Failed to run export {calendar_export.id}')
     await db.commit()
 
 

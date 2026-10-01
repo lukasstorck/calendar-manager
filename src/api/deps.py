@@ -1,10 +1,9 @@
 import datetime
+import typing
 import uuid
-from typing import Annotated
 
 import fastapi
 import pydantic
-import sqlalchemy.ext.asyncio
 
 import src.auth
 import src.core.db
@@ -32,8 +31,8 @@ async def get_current_user(request: fastapi.Request, db: 'DatabaseSession') -> s
   return user
 
 
-DatabaseSession = Annotated[sqlalchemy.ext.asyncio.AsyncSession, fastapi.Depends(src.core.db.get_db)]
-CurrentUser = Annotated[src.models.User, fastapi.Depends(get_current_user)]
+DatabaseSession = typing.Annotated[src.core.db.AsyncSession, fastapi.Depends(src.core.db.get_db)]
+CurrentUser = typing.Annotated[src.models.User, fastapi.Depends(get_current_user)]
 
 
 class BoardUpdateRequest(pydantic.BaseModel):
@@ -64,3 +63,45 @@ class DeleteResponse(pydantic.BaseModel):
   """Delete response when successfully deleting a database object"""
 
   ok: bool
+
+
+class ExportSourceData(pydantic.BaseModel):
+  """Data describing a single calendar export source."""
+
+  import_id: uuid.UUID
+  filter: str = ''
+  transform: str = ''
+
+
+class ExportSourceValidationError(pydantic.BaseModel):
+  """Validation error data for a single calendar export source."""
+
+  import_id: uuid.UUID
+  filter_error: str = ''
+  transform_error: str = ''
+
+
+class ExportUpdateRequest(pydantic.BaseModel):
+  """Update request for a calendar export. Only the fields provided are changed."""
+
+  name: str | None = None
+  description: str | None = None
+  link_name: str | None = None
+  protected: bool | None = None
+  published: bool | None = None
+  sources: list[ExportSourceData] | None = None
+
+
+class ExportSummaryResponse(pydantic.BaseModel):
+  """Summary response for a calendar export."""
+
+  id: uuid.UUID
+  name: str
+  description: str | None
+  link_name: str
+  published: bool
+  protected: bool
+  token: str
+  event_count: int
+  updated_at: datetime.datetime
+  sources: list[ExportSourceData] = pydantic.Field(default_factory=list)

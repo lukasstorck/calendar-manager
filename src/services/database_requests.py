@@ -8,7 +8,6 @@ from src.models import (
   Board,
   BoardCalendar,
   CalendarExport,
-  CalendarExportCache,
   CalendarExportSource,
   CalendarImport,
   CalendarImportSource,
@@ -288,10 +287,11 @@ async def count_export_sources(db: AsyncSession, export_id: uuid.UUID) -> int:
   return result.scalar_one()
 
 
-async def get_export_source_import_ids(db: AsyncSession, export_id: uuid.UUID) -> list[uuid.UUID]:
-  """List of import ids feeding a given export."""
-  query = select(CalendarExportSource.import_id) \
-          .where(CalendarExportSource.export_id == export_id)  # fmt: skip
+async def get_export_sources_ordered(db: AsyncSession, export_id: uuid.UUID) -> list[CalendarExportSource]:
+  """List of export sources given an export id, ordered by position."""
+  query = select(CalendarExportSource) \
+          .where(CalendarExportSource.export_id == export_id) \
+          .order_by(CalendarExportSource.position)  # fmt: skip
 
   result = await db.execute(query)
   return list(result.scalars().all())
@@ -306,40 +306,6 @@ async def delete_export_sources_for_export(db: AsyncSession, export_id: uuid.UUI
           .where(CalendarExportSource.export_id == export_id)  # fmt: skip
 
   await db.execute(query)
-
-
-async def get_active_source_ids_for_export(db: AsyncSession, export_id: uuid.UUID) -> list[uuid.UUID | None]:
-  """Active import-source ids of every import feeding a given export."""
-  query = select(CalendarImport.active_source_id) \
-          .join(CalendarExportSource, CalendarExportSource.import_id == CalendarImport.id) \
-          .where(CalendarExportSource.export_id == export_id)  # fmt: skip
-
-  result = await db.execute(query)
-  return list(result.scalars().all())
-
-
-async def get_imports_for_export(db: AsyncSession, export_id: uuid.UUID) -> list[CalendarImport]:
-  """Imports feeding a given export."""
-  query = select(CalendarImport) \
-          .where(CalendarImport.id.in_(
-            select(CalendarExportSource.import_id)
-            .where(CalendarExportSource.export_id == export_id)
-          ))  # fmt: skip
-
-  result = await db.execute(query)
-  return list(result.scalars().all())
-
-
-async def get_duplicate_exports(db: AsyncSession, dedup_key: str, excluded_export_id: uuid.UUID) -> list[CalendarExport]:
-  """Other exports sharing the same dedup key as the given export."""
-  query = select(CalendarExport) \
-          .where(
-            CalendarExport.dedup_key == dedup_key,
-            CalendarExport.id != excluded_export_id
-          )  # fmt: skip
-
-  result = await db.execute(query)
-  return list(result.scalars().all())
 
 
 async def get_all_exports(db: AsyncSession) -> list[CalendarExport]:
@@ -366,11 +332,6 @@ async def verify_export_ids_are_owned_by_user(db: AsyncSession, user: User, expo
 
   result = await db.execute(query)
   return set(result.scalars())
-
-
-async def get_export_cache_by_dedup_key(db: AsyncSession, dedup_key: str) -> CalendarExportCache | None:
-  """Fetch a cached export result by its dedup key."""
-  return await db.get(CalendarExportCache, dedup_key)
 
 
 # --------------

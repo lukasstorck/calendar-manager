@@ -80,6 +80,8 @@ The boards can be used to provide the calendar links along side a description.
 
 ### BACKLOG
 
+- add non 200 http codes into pydantic documentation
+
 - allow multi-line in descriptions
 
 - admin panel

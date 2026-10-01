@@ -229,19 +229,19 @@ async def add_url_source(import_id: uuid.UUID, payload: dict, user: CurrentUser,
   pull_succeeded = False
   try:
     content = await asyncio.wait_for(calendar_service.fetch_url(url), timeout=URL_FETCH_TIMEOUT_SECONDS)
-    events, range_start, range_end = calendar_service.parse_calendar(content)
-    file_hash = calendar_service.hash_content(content)
+    calendar = calendar_service.CalendarPipeline(content)
+    calendar_stats = calendar.stats()
     now = datetime.now(timezone.utc)
 
-    snapshot = await database_requests.find_snapshot_by_hash(db, subscription.id, file_hash)
+    snapshot = await database_requests.find_snapshot_by_hash(db, subscription.id, calendar.hash)
     if snapshot is None:
       snapshot = Snapshot(
         web_subscription_id=subscription.id,
-        file_hash=file_hash,
+        file_hash=calendar.hash,
         raw_ics=content.decode('utf-8', errors='replace'),
-        event_count=len(events),
-        range_start=range_start,
-        range_end=range_end,
+        event_count=calendar_stats.event_count,
+        range_start=calendar_stats.range_start,
+        range_end=calendar_stats.range_end,
       )
       db.add(snapshot)
       await db.flush()
@@ -297,11 +297,11 @@ async def add_file_source(
   imp = await _get_owned_import(db, import_id, user.id)
 
   content = await file.read()
-  file_hash = calendar_service.hash_content(content)
+  calendar = calendar_service.CalendarPipeline(content)
 
   # Resolve the pooled StaticFile first so the duplicate check can compare FK ids
   # (static_file_id) instead of walking source.static_file -- see add_url_source.
-  static_file = await database_requests.find_static_file_by_hash(db, file_hash)
+  static_file = await database_requests.find_static_file_by_hash(db, calendar.hash)
 
   if static_file is not None:
     duplicate = next((s for s in imp.sources if s.kind == CalendarImportSourceKind.STATIC and s.static_file_id == static_file.id), None)
@@ -309,15 +309,15 @@ async def add_file_source(
       raise HTTPException(status_code=409, detail='This exact file is already added to this import.')
   else:
     try:
-      events, range_start, range_end = calendar_service.parse_calendar(content)
+      calendar_stats = calendar.stats()
     except Exception as exception:  # noqa: BLE001
       raise HTTPException(status_code=422, detail=f'Invalid calendar file: {exception}')
     static_file = StaticFile(
-      file_hash=file_hash,
+      file_hash=calendar.hash,
       raw_ics=content.decode('utf-8', errors='replace'),
-      event_count=len(events),
-      range_start=range_start,
-      range_end=range_end,
+      event_count=calendar_stats.event_count,
+      range_start=calendar_stats.range_start,
+      range_end=calendar_stats.range_end,
     )
     db.add(static_file)
     await db.flush()

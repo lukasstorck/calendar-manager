@@ -21,13 +21,11 @@ async def get_public_calendar(db: DatabaseSession, link_name: str, token: str | 
   if not is_calendar_found or not is_calendar_published or is_protected_invalid_token:
     raise fastapi.HTTPException(status_code=404, detail='Calendar is unavailable or protected')
 
-  if not calendar.dedup_key:
-    return fastapi.Response(content='', media_type='text/calendar')
+  if not calendar.output_ics:
+    return fastapi.HTTPException(status_code=500, detail='Calendar data is empty')
 
-  cache = await database_requests.get_export_cache_by_dedup_key(db, calendar.dedup_key)
-  calendar_file = cache.output_ics if cache else ''
   return fastapi.Response(
-    content=calendar_file,
+    content=calendar.output_ics,
     media_type='text/calendar',
     headers={'Content-Disposition': f'inline; filename="{link_name}.ics"'},
   )
@@ -58,10 +56,9 @@ async def get_public_board(db: DatabaseSession, board_name: str, token: str | No
       {
         'name': calendar.name,
         'description': calendar.description,
-        'rule_text': calendar.rule_text,
         'download_link': download_link,
-        'event_count': calendar.last_output_count,
-        'last_output_change_at': calendar.last_output_change_at.isoformat() if calendar.last_output_change_at else None,
+        'event_count': calendar.event_count,
+        'updated_at': calendar.updated_at.isoformat(),
       }
     )
 

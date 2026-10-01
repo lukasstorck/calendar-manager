@@ -54,7 +54,7 @@ async def _get_owned_board_by_id(db: sqlalchemy.ext.asyncio.AsyncSession, board_
 async def _serialize_board_summary(db: sqlalchemy.ext.asyncio.AsyncSession, board: Board):
   calendar_ids = await database_requests.get_board_calendar_export_ids(db, board.id)
 
-  return BoardSummaryResponse(
+  summary_response = BoardSummaryResponse(
     id=board.id,
     name=board.name,
     description=board.description,
@@ -64,6 +64,7 @@ async def _serialize_board_summary(db: sqlalchemy.ext.asyncio.AsyncSession, boar
     token=board.token,
     calendar_ids=calendar_ids,
   )
+  return summary_response
 
 
 @router.get(
@@ -96,10 +97,7 @@ async def create_board(user: CurrentUser, db: DatabaseSession):
   board = Board(
     user_id=user.id,
     name=name,
-    description=None,
     link_name=link_name,
-    published=True,  # TODO: add in model, PATCH and UI
-    protected=True,
     token=naming.generate_link_token(),
   )
 
@@ -128,17 +126,16 @@ async def get_board(board_id: uuid.UUID, user: CurrentUser, db: DatabaseSession)
   description='Partially update a calendar board owned by the current user. Omitting a field leaves it untouched.',
 )
 async def update_board(board_id: uuid.UUID, payload: BoardUpdateRequest, user: CurrentUser, db: DatabaseSession):
-  """Partially update a board owned by the current user. Only fields present in the request body are changed. Setting `link_name`, `description`, or `calendar_ids` explicitly to `null` clears/unpublishes them; omitting a field leaves it untouched."""
   board = await _get_owned_board_by_id(db, board_id, user.id)
   fields_set = payload.model_dump(exclude_unset=True)
 
   if 'name' in fields_set:
     name = (payload.name or '').strip()
-    board.name = await _validate_board_name(db, name, user, board.id)  # TODO
+    board.name = await _validate_board_name(db, name, user, board.id)
 
   if 'link_name' in fields_set:
     link_name = (payload.link_name or '').strip() or None
-    board.link_name = await _validate_link_name(db, link_name, board.id)  # TODO
+    board.link_name = await _validate_link_name(db, link_name, board.id)
 
   if 'description' in fields_set:
     description = (payload.description or '').strip()
@@ -198,4 +195,4 @@ async def delete_board(board_id: uuid.UUID, user: CurrentUser, db: DatabaseSessi
   await db.delete(board)
   await db.commit()
 
-  return {'ok': True}
+  return DeleteResponse(ok=True)
