@@ -159,11 +159,6 @@ shift:PT1H set-location:"Room 1" remove:description remove:extra-properties
 
 - add documentation strings for all apis (so that they can be read by swagger)
 
-- if no auth provider is set, application should run in single-user mode
-  - the auth should return a static user
-  - still show and use start-page, log-in and log-out buttons
-  - maybe log-in should directly call log-in api if no auth providers are comunicated to the client (nothing to show in login offcanvas)
-
 - rework scheduler
 
 ### BACKLOG
@@ -188,7 +183,6 @@ shift:PT1H set-location:"Room 1" remove:description remove:extra-properties
 - add "add rule to description" for calendar exports (three options: no, raw rule, interpreted sentence "from ... to ... " instead of from:... to:...)
 
 - read healthcheck from calendar gateway
-
 
 - calendar export sources filter/transform user input rework:
   - a canvas with movable (drag and drop) building blocks
