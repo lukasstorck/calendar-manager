@@ -10,7 +10,7 @@ import src.api.boards
 import src.api.exports
 import src.api.imports
 import src.api.public
-import src.core.config
+import src.config
 import src.core.db
 import src.services.scheduler
 
@@ -52,7 +52,7 @@ app.mount('/static', fastapi.staticfiles.StaticFiles(directory=STATIC_DIR_PATH),
 
 @app.get('/health', summary='Health check')
 async def health():
-  if src.core.config.settings.skip_authentication or src.api.auth.PROVIDERS:
+  if src.config.settings.skip_authentication or src.api.auth.PROVIDERS:
     return {'status': 'ok'}
 
   raise fastapi.HTTPException(status_code=503, detail='Authentication providers not configured')

@@ -1,10 +1,10 @@
 import sqlalchemy.ext.asyncio
 import sqlalchemy.orm
 
-import src.core.config
+import src.config
 
 AsyncSession = sqlalchemy.ext.asyncio.AsyncSession
-engine = sqlalchemy.ext.asyncio.create_async_engine(src.core.config.settings.database_url, echo=False, pool_pre_ping=True)
+engine = sqlalchemy.ext.asyncio.create_async_engine(src.config.settings.database_url, echo=False, pool_pre_ping=True)
 async_session = sqlalchemy.ext.asyncio.async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 

@@ -11,7 +11,7 @@ import httpx
 import icalendar
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import src.core.config
+import src.config
 import src.logging
 from src.models import CalendarExport, CalendarImportSourceKind
 from src.services import database_requests
@@ -641,7 +641,7 @@ async def fetch_url(url: str) -> bytes:
       response = await client.get(url)
       response.raise_for_status()
       content = response.content
-      if len(content) > src.core.config.settings.max_web_calendar_file_size:
+      if len(content) > src.config.settings.max_web_calendar_file_size:
         raise ValueError('file too large')
       return content
 
@@ -658,7 +658,7 @@ async def fetch_url(url: str) -> bytes:
   except httpx.HTTPError as exception:
     reason = exception.__class__.__name__
 
-  max_url_length = src.core.config.settings.max_error_url_length
+  max_url_length = src.config.settings.max_error_url_length
   truncated_url = url if len(url) <= max_url_length else url[:max_url_length] + '...'
   raise CalendarFetchError(f'Could not load calendar {truncated_url}: {reason}') from None
 

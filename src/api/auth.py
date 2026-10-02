@@ -5,13 +5,13 @@ import fastapi
 import fastapi.responses
 import starlette.middleware.sessions
 
-import src.core.config
+import src.config
 import src.logging
 
 OAuthClient = authlib.integrations.starlette_client.apps.StarletteOAuth2App
 
 logger = src.logging.logger
-settings = src.core.config.settings
+settings = src.config.settings
 
 DEFAULT_USER = {'id': 'default_user', 'provider': 'no_auth'}
 OAUTH_CALLBACK_TEMPLATE_PATH = 'src/templates/oauth-callback.html'

@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime, timezone
 
-import src.core.config
+import src.config
 import src.logging
 from src.core.db import AsyncSession, async_session
 from src.models import Snapshot, WebSubscription
@@ -73,6 +73,6 @@ async def scheduler_loop(stop_event: asyncio.Event) -> None:
     except Exception:
       logger.exception('Refresh pass failed')
     try:
-      await asyncio.wait_for(stop_event.wait(), timeout=src.core.config.settings.refresh_interval_seconds)
+      await asyncio.wait_for(stop_event.wait(), timeout=src.config.settings.refresh_interval_seconds)
     except asyncio.TimeoutError:
       pass

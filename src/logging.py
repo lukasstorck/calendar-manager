@@ -1,10 +1,10 @@
 import logging
 import sys
 
-import src.core.config
+import src.config
 
 logger = logging.getLogger('calendar-manager')
-logger.setLevel(src.core.config.settings.log_level)
+logger.setLevel(src.config.settings.log_level)
 logger.propagate = False
 
 
@@ -17,4 +17,4 @@ handler = logging.StreamHandler(sys.stdout)
 handler.setFormatter(Formatter())
 logger.addHandler(handler)
 
-logger.debug(f'Logging initialized with level {src.core.config.settings.log_level}')
+logger.debug(f'Logging initialized with level {src.config.settings.log_level}')
