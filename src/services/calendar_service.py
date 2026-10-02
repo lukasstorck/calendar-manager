@@ -151,7 +151,6 @@ class CalendarPipeline:
 
     Return None if valid, an error message otherwise.
     """
-    # TODO add documentation usage note: best use datetime() around all date values both on db side as well as on compared value, otherwise might be string comparison which break on timezones
     filter = filter.strip()
     if not filter:
       return None

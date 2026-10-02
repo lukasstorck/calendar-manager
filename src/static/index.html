@@ -7,22 +7,12 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.3.1/css/all.min.css" rel="stylesheet" />
     <style>
-      .token-predicate {
-        color: #6ea8fe;
+      .sources-info-popover {
+        --bs-popover-max-width: 480px;
       }
-      .token-transform {
-        color: #a370f7;
-      }
-      .token-negated {
-        color: #ea868f;
-      }
-      .token-colon {
-        color: var(--bs-secondary-color);
-      }
-      .tok-special {
-        color: #ffda6a;
-        text-decoration: underline dotted;
-        cursor: help;
+      .sources-info-popover .popover-body {
+        max-height: 70vh;
+        overflow-y: auto;
       }
 
       /* Limit the width of the bootstrap dropdown menu, truncate long strings */
@@ -597,6 +587,11 @@
       <li><code data-key></code> &mdash; <span data-desc></span></li>
     </template>
 
+    <!-- One explanatory note inside the Sources info popover. -->
+    <template id="template-info-note">
+      <p class="mb-1"></p>
+    </template>
+
     <!-- Content of the Sources info popover: static section headings, with
          each <ul> populated at runtime from template-info-list-item so the
          list itself is never built via innerHTML. -->
@@ -604,10 +599,12 @@
       <div>
         <div class="small mb-2">
           <strong>Filter fields</strong>
+          <div class="text-body-secondary mt-1" data-filter-notes></div>
           <ul class="ps-3 mb-0" data-filter-fields-list></ul>
         </div>
         <div class="small mb-2">
           <strong>Transform commands</strong>
+          <div class="text-body-secondary mt-1" data-transform-notes></div>
           <ul class="ps-3 mb-0" data-transform-commands-list></ul>
         </div>
       </div>

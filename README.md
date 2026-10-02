@@ -72,7 +72,6 @@ The boards can be used to provide the calendar links along side a description.
   - still show and use start-page, log-in and log-out buttons
   - maybe log-in should directly call log-in api if no auth providers are comunicated to the client (nothing to show in login offcanvas)
 
-- rework filter rules
 - rework scheduler
 - move auth.py into src/api/
 - move const vars from auth.py into config.py

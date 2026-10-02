@@ -858,27 +858,54 @@ function getPredicateInfo() {
   // supported predicates/transforms; the shape below (dicts of name ->
   // description, keyed the same way) is what the rest of this file expects.
   const filterFields = {
-    title: "Event title (text)",
-    location: "Event location (text)",
+    summary: "Event title (text)",
     description: "Event description (text)",
-    start_time: "Event start, ISO 8601 timestamp",
-    end_time: "Event end, ISO 8601 timestamp",
-    calendar_name: "Name of the source calendar this event came from",
+    location: "Event location (text)",
+    uid: "Unique event id (text)",
+    dtstart: "Start, ISO 8601 in UTC (text, wrap in datetime())",
+    dtend: "End, ISO 8601 in UTC; derived from duration if missing (text, wrap in datetime())",
+    duration: "Length in seconds; derived from start/end if missing (number)",
+    "all-day": "1 for all-day events, 0 for timed events",
+    status: "TENTATIVE, CONFIRMED or CANCELLED (case-insensitive)",
+    class: "PUBLIC, PRIVATE or CONFIDENTIAL (case-insensitive)",
+    transp: "OPAQUE (busy) or TRANSPARENT (free) (case-insensitive)",
+    sequence: "Revision number (number)",
+    url: "Event URL (text)",
+    created: "Creation time, ISO 8601 in UTC (text, wrap in datetime())",
+    "last-modified": "Last modification time, ISO 8601 in UTC (text, wrap in datetime())",
+    dtstamp: "Timestamp of the event's creation by the source, ISO 8601 in UTC (text, wrap in datetime())",
   };
+  const filterNotes = [
+    "A filter is an SQL WHERE clause; events that match are kept. Leave empty to keep all events.",
+    'Quote names containing a hyphen: "all-day", "last-modified".',
+    "Also available: REGEXP (summary REGEXP '^Meeting') and DURATION('PT1H30M'), which converts an ISO 8601 duration to seconds.",
+    "Compare dates with datetime() on both sides, e.g. datetime(dtstart) >= datetime('2026-01-01T00:00:00Z'); plain text comparison breaks across timezones.",
+  ];
   const transformCommands = {
-    "SET <field> = <value>": "Overwrite a field on the event (e.g. SET description = NULL)",
-    "REMOVE <field>": "Delete a field from the event",
-    "CLIP DURATION <min> <max>": "Shorten or extend the event so its duration falls within the given range",
+    "shift:<duration>": "Move the event by an ISO 8601 duration; may be negative (shift:PT1H, shift:-PT30M)",
+    "clip-min-duration:<duration>": "Extend events shorter than this to exactly this length (clip-min-duration:PT15M)",
+    "clip-max-duration:<duration>": "Shorten events longer than this to exactly this length (clip-max-duration:PT2H)",
+    "set-<property>:<value>": 'Overwrite an event property (set-location:"Room 1", set-summary:Busy). Not allowed: uid, dtstart, dtend, duration',
+    "remove:<property>":
+      "Delete an event property (remove:description). remove:extra-properties deletes all X- properties. uid, dtstamp, dtstart, dtend and duration can't be removed",
+    "overlap-trim-end": "Where events overlap, end the earlier event when the later one starts",
+    "overlap-trim-start": "Where events overlap, start the later event when the earlier one ends",
+    "combine-all-day": "Merge consecutive all-day events with the same title into one multi-day event",
   };
+  const transformNotes = [
+    "Separate commands with spaces; they run in order, left to right. Use quotes around values containing spaces.",
+    "shift, clip-* and overlap-* only affect timed events, not all-day events.",
+  ];
 
-  // Placeholder text is derived from the dicts above (rather than written
-  // out separately) so it can't drift out of sync with the supported
-  // fields/commands.
+  // Placeholder text is written as realistic examples that are valid for the
+  // backend, so users can copy them as a starting point.
   _predicateInfoCache = {
     filterFields,
+    filterNotes,
     transformCommands,
-    filterPlaceholder: `e.g. ${Object.keys(filterFields)[0]} LIKE '%value%'`,
-    transformPlaceholder: `e.g. ${Object.keys(transformCommands)[0]}`,
+    transformNotes,
+    filterPlaceholder: "e.g. summary LIKE '%standup%' AND \"all-day\" = 0",
+    transformPlaceholder: 'e.g. shift:PT1H set-location:"Room 1" remove:description',
   };
   return _predicateInfoCache;
 }
@@ -893,6 +920,15 @@ function populateInfoList(ulEl, dict) {
   }
 }
 
+// Appends one <p> per note string into containerEl.
+function populateNotes(containerEl, notes) {
+  for (const note of notes) {
+    const item = cloneTemplate("template-info-note");
+    item.textContent = note;
+    containerEl.appendChild(item);
+  }
+}
+
 // Builds the Sources info popover's content DOM once and caches it (same
 // reasoning as getPredicateInfo() above): Bootstrap calls this again every
 // time the popover is shown, but there's no need to rebuild the list markup
@@ -900,10 +936,12 @@ function populateInfoList(ulEl, dict) {
 let _sourcesInfoContentCache = null;
 function getSourcesInfoContent() {
   if (_sourcesInfoContentCache) return _sourcesInfoContentCache;
-  const { filterFields, transformCommands } = getPredicateInfo();
+  const { filterFields, filterNotes, transformCommands, transformNotes } = getPredicateInfo();
   const content = cloneTemplate("template-sources-info-popover");
   populateInfoList(content.querySelector("[data-filter-fields-list]"), filterFields);
   populateInfoList(content.querySelector("[data-transform-commands-list]"), transformCommands);
+  populateNotes(content.querySelector("[data-filter-notes]"), filterNotes);
+  populateNotes(content.querySelector("[data-transform-notes]"), transformNotes);
   _sourcesInfoContentCache = content;
   return content;
 }
@@ -922,6 +960,7 @@ function setupSourcesInfoPopover() {
     html: true,
     trigger: "hover focus",
     placement: "bottom",
+    customClass: "sources-info-popover",
     title: "", // no popover-header: the button has no `title` attribute to fall back to, and this makes that explicit
     content: getSourcesInfoContent,
   });
