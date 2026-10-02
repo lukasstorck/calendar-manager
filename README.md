@@ -100,3 +100,15 @@ The boards can be used to provide the calendar links along side a description.
 - add "add rule to description" for calendar exports (three options: no, raw rule, interpreted sentence "from ... to ... " instead of from:... to:...)
 
 - read healthcheck from calendar gateway
+
+
+- calendar export sources filter/transform user input rework:
+  - a canvas with movable (drag and drop) building blocks
+    - source: all events of a calendar input source
+    - filter: an SQL WHERE clause with two output groups, the events that match and those that don't
+    - transform: operators that are applied to events, has transformed events as output
+    - export: a single sink block, which collects all connected events into the output calendar
+  - blocks are connected with lines, which pass on the grouped events to the next block
+  - there can be multiple source, filter and transform blocks, but only a single export block
+  - there can be multiple output and input lines from and to each block, which duplicate and merge the events
+  - there can be multiple layers of filters and transforms blocks
