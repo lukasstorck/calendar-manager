@@ -5,7 +5,7 @@ import uuid
 import fastapi
 import pydantic
 
-import src.auth
+import src.api.auth
 import src.core.db
 import src.models
 import src.services.database_requests
@@ -17,7 +17,7 @@ async def get_current_user(request: fastapi.Request, db: 'DatabaseSession') -> s
   The user id is read from the current session, which is populated by the callback
   from the OAuth provider. If the user is not yet in the database, it is created.
   """
-  session_user = src.auth.get_session_user(request)
+  session_user = src.api.auth.get_session_user(request)
   if not session_user:
     raise fastapi.HTTPException(status_code=401, detail='Not authenticated')
 

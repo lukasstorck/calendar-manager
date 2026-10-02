@@ -5,11 +5,11 @@ import fastapi
 import fastapi.responses
 import fastapi.staticfiles
 
+import src.api.auth
 import src.api.boards
 import src.api.exports
 import src.api.imports
 import src.api.public
-import src.auth
 import src.core.db
 import src.services.scheduler
 
@@ -38,9 +38,9 @@ async def lifespan(app: fastapi.FastAPI):
 
 
 app = fastapi.FastAPI(lifespan=lifespan)
-src.auth.configure(app)
+src.api.auth.configure(app)
 
-app.include_router(src.auth.router)
+app.include_router(src.api.auth.router)
 app.include_router(src.api.imports.router)
 app.include_router(src.api.exports.router)
 app.include_router(src.api.boards.router)
@@ -51,7 +51,7 @@ app.mount('/static', fastapi.staticfiles.StaticFiles(directory=STATIC_DIR_PATH),
 
 @app.get('/health', summary='Health check')
 async def health():
-  if src.auth.PROVIDERS:
+  if src.api.auth.SKIP_AUTHENTICATION or src.api.auth.PROVIDERS:
     return {'status': 'ok'}
 
   raise fastapi.HTTPException(status_code=503, detail='Authentication providers not configured')

@@ -3,6 +3,7 @@ import os
 DEFAULT_LOG_LEVEL = 'WARNING'
 LOG_LEVEL = os.getenv('LOG_LEVEL', DEFAULT_LOG_LEVEL).upper()
 DATABASE_URL = os.environ.get('DATABASE_URL')
+SKIP_AUTHENTICATION = os.getenv('SKIP_AUTHENTICATION', 'false').lower() in ('1', 'true', 'yes')
 REFRESH_INTERVAL_SECONDS = int(os.environ.get('REFRESH_INTERVAL_SECONDS'))
 
 MAX_WEB_CALENDAR_FILE_SIZE = 20 * 1024 * 1024  # 20 MB

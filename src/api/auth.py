@@ -7,6 +7,7 @@ import fastapi
 import fastapi.responses
 import starlette.middleware.sessions
 
+import src.core.config
 import src.logging
 
 OAuthClient = authlib.integrations.starlette_client.apps.StarletteOAuth2App
@@ -26,13 +27,16 @@ POCKETID_CLIENT_ID = os.environ.get('POCKETID_CLIENT_ID')
 POCKETID_CLIENT_SECRET = os.environ.get('POCKETID_CLIENT_SECRET')
 POCKETID_SERVER_METADATA_URL = os.environ.get('POCKETID_SERVER_METADATA_URL')
 
+SKIP_AUTHENTICATION = src.core.config.SKIP_AUTHENTICATION
+DEFAULT_USER = {'id': 'default_user', 'provider': 'no_auth'}
+
 OAUTH_CALLBACK_TEMPLATE_PATH = 'src/templates/oauth-callback.html'
 
 
 router = fastapi.APIRouter(prefix='/api/auth', tags=['auth'])
 oauth = authlib.integrations.starlette_client.OAuth()
 
-if GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET:
+if not SKIP_AUTHENTICATION and GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET:
   oauth.register(
     name='github',
     client_id=GITHUB_CLIENT_ID,
@@ -43,7 +47,7 @@ if GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET:
     client_kwargs={'scope': 'user:email'},
   )
 
-if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
+if not SKIP_AUTHENTICATION and GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
   oauth.register(
     name='google',
     client_id=GOOGLE_CLIENT_ID,
@@ -52,7 +56,7 @@ if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
     client_kwargs={'scope': 'openid email profile'},
   )
 
-if POCKETID_CLIENT_ID and POCKETID_CLIENT_SECRET and POCKETID_SERVER_METADATA_URL:
+if not SKIP_AUTHENTICATION and POCKETID_CLIENT_ID and POCKETID_CLIENT_SECRET and POCKETID_SERVER_METADATA_URL:
   oauth.register(
     name='pocketid',
     client_id=POCKETID_CLIENT_ID,
@@ -76,7 +80,17 @@ def configure(app: fastapi.FastAPI):
 
 
 def get_session_user(request: fastapi.Request) -> dict[str, str] | None:
-  return request.session.get('user')
+  if SKIP_AUTHENTICATION:
+    return DEFAULT_USER
+
+  user = request.session.get('user')
+
+  if user == DEFAULT_USER:
+    # SKIP_AUTHENTICATION is false, so the default user is not allowed
+    request.session.clear()
+    return None
+
+  return user
 
 
 @router.get('/providers')
