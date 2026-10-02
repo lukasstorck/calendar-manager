@@ -1107,11 +1107,27 @@ async function openExportModal(exportId) {
   exportEditModal.show();
 }
 
-// While a call is running, further calls are ignored and receive the result of the running one.
+// Runs at most one call at a time. Calls made while one is running are merged into a single
+// follow-up run, so changes made during the request are saved with their own result.
 function singleFlight(task) {
   let pending = null;
+  let rerunRequested = false;
+
+  async function runUntilSettled(args) {
+    let result;
+    do {
+      rerunRequested = false;
+      result = await task(...args);
+    } while (rerunRequested);
+    return result;
+  }
+
   return (...args) => {
-    pending ??= task(...args).finally(() => {
+    if (pending) {
+      rerunRequested = true;
+      return pending;
+    }
+    pending = runUntilSettled(args).finally(() => {
       pending = null;
     });
     return pending;
@@ -1164,6 +1180,7 @@ async function performExportSave(exportId) {
     pubErrEl.textContent = isLinkNameError ? err.detail : "";
     pubInput.classList.toggle("is-invalid", isLinkNameError);
     if (!isNameError && !isLinkNameError) showToast(err.detail || "Save failed");
+    exportEditModalDirty = true;
     return false;
   }
   nameInput.classList.remove("is-invalid");
@@ -1396,6 +1413,7 @@ async function performBoardSave(boardId) {
     linkNameInput.classList.toggle("is-invalid", isLinkNameError);
 
     if (!isNameError && !isLinkNameError) showToast(error.detail || "Save failed");
+    boardEditModalDirty = true;
     return false;
   }
 
