@@ -14,9 +14,11 @@ from sqlalchemy import (
   func,
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from src.core.db import Base
+
+class Base(DeclarativeBase):
+  pass
 
 
 class CalendarSourceKind(enum.StrEnum):

@@ -6,7 +6,6 @@ import fastapi
 import pydantic
 
 import src.api.auth
-import src.core.db
 import src.models
 import src.services.database_requests
 
@@ -31,7 +30,7 @@ async def get_current_user(request: fastapi.Request, db: 'DatabaseSession') -> s
   return user
 
 
-DatabaseSession = typing.Annotated[src.core.db.AsyncSession, fastapi.Depends(src.core.db.get_db)]
+DatabaseSession = typing.Annotated[src.services.database_requests.AsyncSession, fastapi.Depends(src.services.database_requests.get_db)]
 CurrentUser = typing.Annotated[src.models.User, fastapi.Depends(get_current_user)]
 
 

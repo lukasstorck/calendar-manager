@@ -3,9 +3,9 @@ from datetime import datetime, timezone
 
 import src.config
 import src.logging
-from src.core.db import AsyncSession, async_session
 from src.models import Snapshot, WebSubscription
 from src.services import calendar_service, database_requests
+from src.services.database_requests import AsyncSession, async_session
 
 logger = src.logging.logger
 

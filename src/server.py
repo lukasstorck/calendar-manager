@@ -11,7 +11,8 @@ import src.api.exports
 import src.api.imports
 import src.api.public
 import src.config
-import src.core.db
+import src.models
+import src.services.database_requests
 import src.services.scheduler
 
 STATIC_DIR_PATH = 'src/static'
@@ -25,8 +26,8 @@ _scheduler_task: asyncio.Task | None = None
 @contextlib.asynccontextmanager
 async def lifespan(app: fastapi.FastAPI):
   global _stop_event, _scheduler_task
-  async with src.core.db.engine.begin() as conn:
-    await conn.run_sync(src.core.db.Base.metadata.create_all)
+  async with src.services.database_requests.engine.begin() as conn:
+    await conn.run_sync(src.models.Base.metadata.create_all)
 
   _stop_event = asyncio.Event()
   _scheduler_task = asyncio.create_task(src.services.scheduler.scheduler_loop(_stop_event))
