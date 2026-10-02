@@ -61,6 +61,82 @@ Each training group could for example be filtered via the event title or there c
 The boards can be used to provide the calendar links along side a description.
 
 
+### Filters and transforms
+
+Each source in a calendar export has its own filter and transform.
+The filter selects which events of the import are kept, then the transform modifies the kept events.
+
+#### Filters
+
+A filter is an SQL `WHERE` clause (SQLite) evaluated against every event of the import.
+Events that match are kept, an empty filter keeps all events.
+
+| Field             | Description                                                             |
+| ----------------- | ----------------------------------------------------------------------- |
+| `summary`         | Event title (text)                                                      |
+| `description`     | Event description (text)                                                |
+| `location`        | Event location (text)                                                   |
+| `uid`             | Unique event id (text)                                                  |
+| `dtstart`         | Start, ISO 8601 in UTC (text)                                           |
+| `dtend`           | End, ISO 8601 in UTC, derived from the duration if missing (text)       |
+| `duration`        | Length in seconds, derived from start and end if missing (number)       |
+| `"all-day"`       | `1` for all-day events, `0` for timed events                            |
+| `status`          | `TENTATIVE`, `CONFIRMED` or `CANCELLED` (case-insensitive)              |
+| `class`           | `PUBLIC`, `PRIVATE` or `CONFIDENTIAL` (case-insensitive)                |
+| `transp`          | `OPAQUE` (busy) or `TRANSPARENT` (free) (case-insensitive)              |
+| `sequence`        | Revision number (number)                                                |
+| `url`             | Event URL (text)                                                        |
+| `created`         | Creation time, ISO 8601 in UTC (text)                                   |
+| `"last-modified"` | Last modification time, ISO 8601 in UTC (text)                          |
+| `dtstamp`         | Timestamp of the event's creation by the source, ISO 8601 in UTC (text) |
+
+Notes:
+- Field names containing a hyphen must be quoted: `"all-day"`, `"last-modified"`.
+- `REGEXP` is available: `summary REGEXP '^Meeting'`.
+- `DURATION('PT1H30M')` converts an ISO 8601 duration to seconds: `duration > DURATION('PT2H')`.
+- Dates are stored as text. Wrap both sides in `datetime()` when comparing, otherwise the comparison is a plain string comparison, which breaks across timezones.
+
+Examples:
+
+```sql
+summary LIKE '%standup%' AND "all-day" = 0
+summary REGEXP '^(Training|Match)' AND status != 'CANCELLED'
+datetime(dtstart) >= datetime('2026-01-01') AND datetime(dtstart) < datetime('2026-07-01T12:30:00+05:00')
+duration > DURATION('PT2H')
+```
+
+#### Transforms
+
+A transform is a space-separated list of commands.
+Commands run in order, from left to right.
+Values containing spaces must be quoted: `set-location:"Room 1"`.
+Durations use the ISO 8601 format, e.g. `PT15M`, `PT1H30M`, `P1D`.
+
+| Command                        | Description                                                                                            |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `shift:<duration>`             | Move the event by a duration, may be negative (`shift:PT1H`, `shift:-PT30M`)                           |
+| `clip-min-duration:<duration>` | Extend events shorter than the duration to exactly that length                                         |
+| `clip-max-duration:<duration>` | Shorten events longer than the duration to exactly that length                                         |
+| `set-<property>:<value>`       | Overwrite an event property (`set-location:"Room 1"`, `set-summary:Busy`)                              |
+| `remove:<property>`            | Delete an event property (`remove:description`), `remove:extra-properties` deletes all `X-` properties |
+| `overlap-trim-end`             | Where events overlap, end the earlier event when the later one starts                                  |
+| `overlap-trim-start`           | Where events overlap, start the later event when the earlier one ends                                  |
+| `combine-all-day`              | Merge consecutive all-day events with the same title into one multi-day event                          |
+
+Notes:
+- `shift`, `clip-*` and `overlap-*` only affect timed events, all-day events are left unchanged.
+- `set-uid`, `set-dtstart`, `set-dtend` and `set-duration` are not allowed, use `shift` and `clip-*` to change event times.
+- `uid`, `dtstamp`, `dtstart`, `dtend` and `duration` can not be removed.
+- `overlap-*` and `combine-all-day` take no value.
+- Unknown commands and invalid durations are rejected when saving the export.
+
+Example:
+
+```
+shift:PT1H set-location:"Room 1" remove:description remove:extra-properties
+```
+
+
 ### TODO
 
 - rename field: press enter to confirm or escape to cancel
