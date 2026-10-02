@@ -180,8 +180,8 @@ class CalendarExport(Base):
   output_ics: Mapped[str] = mapped_column(Text, default='')
   event_count: Mapped[int] = mapped_column(Integer, default=0)
   created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-  updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-  last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+  updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+  last_checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
   user: Mapped['User'] = relationship(back_populates='exports')
   sources: Mapped[list['CalendarExportSource']] = relationship(back_populates='calendar_export', cascade='all, delete-orphan')

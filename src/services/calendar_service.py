@@ -666,6 +666,8 @@ async def update_export_data(db: AsyncSession, export: CalendarExport, now: date
   """Recompute an export's output"""
   now = now or datetime.datetime.now(datetime.timezone.utc)
 
+  old_hash = CalendarPipeline(export.output_ics.encode('utf-8')).hash if export.output_ics else None
+
   merged_calendar = None
   sources = await database_requests.get_export_sources_ordered(db, export.id)
   for source in sources:
@@ -721,5 +723,8 @@ async def update_export_data(db: AsyncSession, export: CalendarExport, now: date
 
   await db.flush()
 
-  export.updated_at = now  # TODO: only update when changed
+  content_changed = old_hash is None or old_hash != merged_calendar.hash
+  if content_changed:
+    export.updated_at = now
+
   export.last_checked_at = now
