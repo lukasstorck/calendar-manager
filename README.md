@@ -165,8 +165,6 @@ shift:PT1H set-location:"Room 1" remove:description remove:extra-properties
   - maybe log-in should directly call log-in api if no auth providers are comunicated to the client (nothing to show in login offcanvas)
 
 - rework scheduler
-- move const vars from auth.py into config.py
-- maybe use pydantic for config.py
 
 ### BACKLOG
 

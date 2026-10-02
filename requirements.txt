@@ -6,5 +6,6 @@ httpx==0.28.1
 sqlalchemy==2.0.51
 asyncpg==0.31.0
 icalendar==7.2.2
+pydantic-settings
 python-dateutil==2.9.0.post0
 python-multipart==0.0.32

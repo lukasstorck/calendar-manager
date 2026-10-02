@@ -1,5 +1,3 @@
-import os
-
 import authlib.integrations.base_client.errors
 import authlib.integrations.starlette_client
 import authlib.integrations.starlette_client.apps
@@ -13,55 +11,41 @@ import src.logging
 OAuthClient = authlib.integrations.starlette_client.apps.StarletteOAuth2App
 
 logger = src.logging.logger
+settings = src.core.config.settings
 
-BASE_URL = os.environ.get('BASE_URL')
-SESSION_SECRET = os.environ.get('SESSION_SECRET')
-
-GITHUB_CLIENT_ID = os.environ.get('GITHUB_CLIENT_ID')
-GITHUB_CLIENT_SECRET = os.environ.get('GITHUB_CLIENT_SECRET')
-
-GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID')
-GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET')
-
-POCKETID_CLIENT_ID = os.environ.get('POCKETID_CLIENT_ID')
-POCKETID_CLIENT_SECRET = os.environ.get('POCKETID_CLIENT_SECRET')
-POCKETID_SERVER_METADATA_URL = os.environ.get('POCKETID_SERVER_METADATA_URL')
-
-SKIP_AUTHENTICATION = src.core.config.SKIP_AUTHENTICATION
 DEFAULT_USER = {'id': 'default_user', 'provider': 'no_auth'}
-
 OAUTH_CALLBACK_TEMPLATE_PATH = 'src/templates/oauth-callback.html'
 
 
 router = fastapi.APIRouter(prefix='/api/auth', tags=['auth'])
 oauth = authlib.integrations.starlette_client.OAuth()
 
-if not SKIP_AUTHENTICATION and GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET:
+if not settings.skip_authentication and settings.github_client_id and settings.github_client_secret:
   oauth.register(
     name='github',
-    client_id=GITHUB_CLIENT_ID,
-    client_secret=GITHUB_CLIENT_SECRET,
+    client_id=settings.github_client_id,
+    client_secret=settings.github_client_secret,
     authorize_url='https://github.com/login/oauth/authorize',
     access_token_url='https://github.com/login/oauth/access_token',
     api_base_url='https://api.github.com/',
     client_kwargs={'scope': 'user:email'},
   )
 
-if not SKIP_AUTHENTICATION and GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
+if not settings.skip_authentication and settings.google_client_id and settings.google_client_secret:
   oauth.register(
     name='google',
-    client_id=GOOGLE_CLIENT_ID,
-    client_secret=GOOGLE_CLIENT_SECRET,
+    client_id=settings.google_client_id,
+    client_secret=settings.google_client_secret,
     server_metadata_url=('https://accounts.google.com/.well-known/openid-configuration'),
     client_kwargs={'scope': 'openid email profile'},
   )
 
-if not SKIP_AUTHENTICATION and POCKETID_CLIENT_ID and POCKETID_CLIENT_SECRET and POCKETID_SERVER_METADATA_URL:
+if not settings.skip_authentication and settings.pocketid_client_id and settings.pocketid_client_secret and settings.pocketid_server_metadata_url:
   oauth.register(
     name='pocketid',
-    client_id=POCKETID_CLIENT_ID,
-    client_secret=POCKETID_CLIENT_SECRET,
-    server_metadata_url=POCKETID_SERVER_METADATA_URL,
+    client_id=settings.pocketid_client_id,
+    client_secret=settings.pocketid_client_secret,
+    server_metadata_url=settings.pocketid_server_metadata_url,
     client_kwargs={'scope': 'openid'},
   )
 
@@ -71,7 +55,7 @@ PROVIDERS = sorted(oauth._registry.keys(), key=str.lower)
 def configure(app: fastapi.FastAPI):
   app.add_middleware(
     starlette.middleware.sessions.SessionMiddleware,
-    secret_key=SESSION_SECRET,
+    secret_key=settings.session_secret,
     session_cookie='session',
     max_age=60 * 60 * 24 * 14,
     same_site='lax',
@@ -80,13 +64,13 @@ def configure(app: fastapi.FastAPI):
 
 
 def get_session_user(request: fastapi.Request) -> dict[str, str] | None:
-  if SKIP_AUTHENTICATION:
+  if settings.skip_authentication:
     return DEFAULT_USER
 
   user = request.session.get('user')
 
+  # authentication is is required, so the default user is not allowed
   if user == DEFAULT_USER:
-    # SKIP_AUTHENTICATION is false, so the default user is not allowed
     request.session.clear()
     return None
 
@@ -118,7 +102,7 @@ async def login(request: fastapi.Request, provider: str):
   if provider not in PROVIDERS:
     raise fastapi.HTTPException(status_code=400, detail='Unsupported provider')
 
-  redirect_uri = f'{BASE_URL}/api/auth/callback/{provider}'
+  redirect_uri = f'{settings.base_url}/api/auth/callback/{provider}'
   client: OAuthClient = oauth.create_client(provider)
 
   return await client.authorize_redirect(request, redirect_uri)
