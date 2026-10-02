@@ -663,7 +663,7 @@ async def fetch_url(url: str) -> bytes:
   raise CalendarFetchError(f'Could not load calendar {truncated_url}: {reason}') from None
 
 
-async def update_export_data(db: AsyncSession, export: CalendarExport, now: datetime.datetime | None = None) -> None:
+async def update_export_data(db: AsyncSession, export: CalendarExport, now: datetime.datetime | None = None):
   """Recompute an export's output"""
   now = now or datetime.datetime.now(datetime.timezone.utc)
 
