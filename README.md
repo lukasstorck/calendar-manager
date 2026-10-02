@@ -93,15 +93,26 @@ Events that match are kept, an empty filter keeps all events.
 Notes:
 - Field names containing a hyphen must be quoted: `"all-day"`, `"last-modified"`.
 - `REGEXP` is available: `summary REGEXP '^Meeting'`.
+- `GLOB` is available: `summary GLOB 'Meeting*'`.
 - `DURATION('PT1H30M')` converts an ISO 8601 duration to seconds: `duration > DURATION('PT2H')`.
-- Dates are stored as text. Wrap both sides in `datetime()` when comparing, otherwise the comparison is a plain string comparison, which breaks across timezones.
+- Dates are stored as text in UTC. Wrap both sides in `datetime()` when comparing, otherwise the comparison is a plain string comparison, which breaks across timezones. `datetime()` converts values with a UTC offset (e.g. `+01:00`) to UTC, so you can write bounds in your local time.
 
 Examples:
 
 ```sql
 summary LIKE '%standup%' AND "all-day" = 0
+summary GLOB 'Training *' AND location GLOB '*Hall [12]'
 summary REGEXP '^(Training|Match)' AND status != 'CANCELLED'
+
+-- all events between 2026-01-01 UTC and 2026-07-01 12:30 (UTC+5)
 datetime(dtstart) >= datetime('2026-01-01') AND datetime(dtstart) < datetime('2026-07-01T12:30:00+05:00')
+
+-- all events after 2021, but without summer of 2025
+datetime(dtstart) >= datetime('2021-01-01') AND NOT (
+  datetime(dtstart) >= datetime('2025-06-01')
+  AND datetime(dtstart) < datetime('2025-09-01')
+)
+
 duration > DURATION('PT2H')
 ```
 
