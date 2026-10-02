@@ -1107,11 +1107,24 @@ async function openExportModal(exportId) {
   exportEditModal.show();
 }
 
+// While a call is running, further calls are ignored and receive the result of the running one.
+function singleFlight(task) {
+  let pending = null;
+  return (...args) => {
+    pending ??= task(...args).finally(() => {
+      pending = null;
+    });
+    return pending;
+  };
+}
+
+const saveExport = singleFlight(performExportSave);
+
 // Returns true on success, false on failure -- callers (in particular the
 // close-the-modal handler) must not blindly retry on failure, or a
 // permanently-invalid value (e.g. a name that collides) turns into an
 // infinite save loop every time hide() is called again.
-async function saveExport(exportId) {
+async function performExportSave(exportId) {
   const payload = {
     name: document.getElementById("export-name").value.trim(),
     description: document.getElementById("export-description").value,
@@ -1342,8 +1355,10 @@ async function openBoardModal(boardId) {
   boardEditModal.show();
 }
 
+const saveBoard = singleFlight(performBoardSave);
+
 // Same success/failure contract as saveExport, for the same reason.
-async function saveBoard(boardId) {
+async function performBoardSave(boardId) {
   const payload = {
     name: document.getElementById("board-name").value.trim(),
     description: document.getElementById("board-description").value,

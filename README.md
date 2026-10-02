@@ -150,8 +150,6 @@ shift:PT1H set-location:"Room 1" remove:description remove:extra-properties
 
 ### TODO
 
-- bug: when trying to close a modal with autosave, currently a new save action is triggered, while the previous auto save is still running or even while a previous modal-closing triggered save is running, this leads to multiple save requests, which can lead to unintended behavior (add multiple of the same): ignore additional save requests, wait until first returns
-
 - make calendar import backup individually, no single backup for same url
 - normalize calendar file before saving -> google seems to be inconsistant with order -> should have same hash for change detection
 
