@@ -35,7 +35,7 @@ VEVENT_SQL_COLUMNS = {
   'created': 'TEXT',
   'last-modified': 'TEXT',
   'url': 'TEXT',
-  'all_day': 'INTEGER',  # 1 if DTSTART is a DATE value (VALUE=DATE), else 0
+  'all-day': 'INTEGER',  # 1 if DTSTART is a DATE value (VALUE=DATE), else 0
 }
 
 
@@ -442,7 +442,7 @@ class CalendarPipeline:
     values['created'] = CalendarPipeline._to_sql_value(CalendarPipeline._to_utc(event.decoded('CREATED', None)))
     values['last-modified'] = CalendarPipeline._to_sql_value(CalendarPipeline._to_utc(event.decoded('LAST-MODIFIED', None)))
 
-    values['all_day'] = int(CalendarPipeline._is_all_day(event))
+    values['all-day'] = int(CalendarPipeline._is_all_day(event))
 
     start, end = CalendarPipeline._event_bounds(event)
     values['dtstart'] = CalendarPipeline._to_sql_value(start)
