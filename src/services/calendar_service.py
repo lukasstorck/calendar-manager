@@ -352,6 +352,26 @@ class CalendarPipeline:
     calendar.add_missing_timezones()
     return calendar
 
+  def sort_components(self):
+    """Soft sort icalendar components.
+
+    Components are sorted by:
+    1. whether they are an event
+    2. event start
+    3. event end
+    4. event UID
+    """
+
+    _MIN_DT = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+
+    def build_sort_key(component: icalendar.Component):
+      if not isinstance(component, icalendar.Event):
+        return (0, _MIN_DT, _MIN_DT, '')
+      start, end = CalendarPipeline._event_bounds(component)
+      return (1, start or _MIN_DT, end or _MIN_DT, str(component.get('UID', '')))
+
+    self.calendar.subcomponents.sort(key=build_sort_key)
+
   @staticmethod
   def _create_session(rows=()) -> sqlite3.Connection:
     """Prepare new sqlite3 session."""
@@ -693,6 +713,8 @@ async def update_export_data(db: AsyncSession, export: CalendarExport, now: date
   # merged_calendar.apply_calendar_properties(export.calendar_properties, deepcopy=False)
 
   # TODO remove events that are in deleted_uids, add delete as transform predicate (ignore all other ops)
+
+  merged_calendar.sort_components()
 
   calendar_stats = merged_calendar.stats()
   export.output_ics = merged_calendar.calendar.to_ical().decode('utf-8')
