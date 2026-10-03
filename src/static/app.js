@@ -442,6 +442,15 @@ function renderImportItem(import_) {
     acceptBtn.disabled = nameInput.value.trim() === originalName || !nameInput.value.trim();
   });
 
+  nameInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      if (!acceptBtn.disabled) acceptBtn.click();
+    } else if (event.key === "Escape") {
+      cancelBtn.click();
+    }
+  });
+
   acceptBtn.addEventListener("click", async () => {
     const value = nameInput.value.trim();
     if (!value || value === originalName) return;
@@ -535,8 +544,14 @@ async function openSourceEditModal(imp, source) {
     titleAcceptBtn.disabled = titleInput.value.trim() === originalLabel || !titleInput.value.trim();
   };
   titleInput.onkeydown = (event) => {
-    if (event.key === "Enter" && !titleAcceptBtn.disabled) titleAcceptBtn.click();
-    if (event.key === "Escape") titleCancelBtn.click();
+    if (event.key === "Enter") {
+      event.preventDefault();
+      if (!titleAcceptBtn.disabled) titleAcceptBtn.click();
+    } else if (event.key === "Escape") {
+      // keep Escape from also closing the Bootstrap modal
+      event.stopPropagation();
+      titleCancelBtn.click();
+    }
   };
   titleAcceptBtn.onclick = async () => {
     const value = titleInput.value.trim();

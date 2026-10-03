@@ -153,8 +153,6 @@ shift:PT1H set-location:"Room 1" remove:description remove:extra-properties
 - make calendar import backup individually, no single backup for same url
 - normalize calendar file before saving -> google seems to be inconsistant with order -> should have same hash for change detection
 
-- rename field: press enter to confirm or escape to cancel
-
 - add documentation strings for all apis (so that they can be read by swagger)
 
 - rework scheduler
