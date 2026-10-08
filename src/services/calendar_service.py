@@ -2,18 +2,21 @@ import copy
 import dataclasses
 import datetime
 import enum
+import functools
 import hashlib
 import re
 import shlex
 import sqlite3
+import typing
 
 import httpx
 import icalendar
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import src.config
 import src.logging
-from src.models import CalendarExport, CalendarImportSourceKind
+from src.models import CalendarExport, CalendarFile
 from src.services import database_requests
 
 logger = src.logging.logger
@@ -49,8 +52,7 @@ class CalendarProperties:
   color: str | None = None
 
 
-@dataclasses.dataclass
-class CalendarStats:
+class _CalendarStats(typing.NamedTuple):
   event_count: int
   range_start: datetime.datetime | None
   range_end: datetime.datetime | None
@@ -68,18 +70,68 @@ class MergeMode(enum.StrEnum):
   SKIP = 'skip'
 
 
+def _modifies_calendar(method: typing.Callable):
+  """Decorator for a pipeline method that may modify `self.calendar` in place.
+
+  Everything derived from the calendar (defined in 'CalendarPipeline._DERIVED')is dropped after
+  the method is called and computed again from the modified calendar on next access.
+  """
+
+  @functools.wraps(method)
+  def wrapper(self: 'CalendarPipeline', *args, **kwargs):
+    try:
+      return method(self, *args, **kwargs)
+    finally:
+      for name in self._DERIVED:
+        self.__dict__.pop(name, None)
+
+  return wrapper
+
+
 class CalendarPipeline:
-  def __init__(self, data: bytes):
-    self.calendar: icalendar.Calendar = icalendar.Calendar.from_ical(data)
+  """Wrapper for a icalendar object that allows for applying filters and
+  transformations as well as retrieving information and different forms.
 
-  @property
-  def hash(self):
-    return hashlib.sha256(self.calendar.to_ical()).hexdigest()
+  The derived values (`_DERIVED`) are computed on first access and cached. If a
+  function is called that may modify the calendar, the cache is dropped.
+  """
 
-  def copy(self, deepcopy: bool = True):
-    return copy.deepcopy(self.calendar) if deepcopy else self.calendar
+  # cached values that depend on `calendar`, dropped by `_modifies_calendar`
+  _DERIVED = ('raw_bytes', 'text', 'hash', '_stats')
 
-  def stats(self):
+  def __init__(self, data: bytes | str, lazy: bool = False):
+    if isinstance(data, bytes):
+      self.raw_bytes = data
+      _ = self.text  # pre-compute
+    else:
+      self.text = data
+      _ = self.raw_bytes  # pre-compute
+
+    if not lazy:
+      _ = self.calendar  # pre-compute
+
+  @functools.cached_property
+  def calendar(self) -> icalendar.Calendar:
+    return icalendar.Calendar.from_ical(self.raw_bytes)
+
+  @functools.cached_property
+  def raw_bytes(self) -> bytes:
+    """ICS content as bytes"""
+    if 'text' in self.__dict__:
+      return self.text.encode('utf-8')
+    return self.calendar.to_ical()
+
+  @functools.cached_property
+  def text(self) -> str:
+    """ICS content as text"""
+    return self.raw_bytes.decode('utf-8', errors='replace')
+
+  @functools.cached_property
+  def hash(self) -> str:
+    return hashlib.sha256(self.raw_bytes).hexdigest()
+
+  @functools.cached_property
+  def _stats(self) -> _CalendarStats:
     event_count = 0
     range_start = None
     range_end = None
@@ -99,7 +151,22 @@ class CalendarPipeline:
       if range_end is None or event_end > range_end:
         range_end = event_end
 
-    return CalendarStats(event_count=event_count, range_start=range_start, range_end=range_end)
+    return _CalendarStats(event_count=event_count, range_start=range_start, range_end=range_end)
+
+  @property
+  def event_count(self) -> int:
+    return self._stats.event_count
+
+  @property
+  def range_start(self) -> datetime.datetime | None:
+    return self._stats.range_start
+
+  @property
+  def range_end(self) -> datetime.datetime | None:
+    return self._stats.range_end
+
+  def copy(self, deepcopy: bool = True):
+    return copy.deepcopy(self.calendar) if deepcopy else self.calendar
 
   def export_calendar_properties(self) -> CalendarProperties:
     """Return extracted calendar properties."""
@@ -113,7 +180,8 @@ class CalendarPipeline:
     )
     return properties
 
-  def apply_calendar_properties(self, properties: CalendarProperties, common_vendor_fallbacks: bool = True, deepcopy: bool = True):
+  @_modifies_calendar
+  def apply_calendar_properties(self, properties: CalendarProperties, common_vendor_fallbacks: bool = True):
     """Overwrite calendar properties.
 
     If `common_vendor_fallbacks` is True, set these additional properties:
@@ -121,29 +189,25 @@ class CalendarPipeline:
       refresh_interval -> X-PUBLISHED-TTL
     """
 
-    calendar = self.copy(deepcopy)
+    self.calendar.prodid = properties.prodid
+    self.calendar.version = '2.0'
+    self.calendar.uid = properties.uid
+    self.calendar.last_modified = properties.last_modified
+    self.calendar.url = properties.url
+    self.calendar.color = properties.color
 
-    calendar.prodid = properties.prodid
-    calendar.version = '2.0'
-    calendar.uid = properties.uid
-    calendar.last_modified = properties.last_modified
-    calendar.url = properties.url
-    calendar.color = properties.color
-
-    calendar.pop('REFRESH-INTERVAL', None)
+    self.calendar.pop('REFRESH-INTERVAL', None)
     if properties.refresh_interval is not None:
-      calendar.add('REFRESH-INTERVAL', properties.refresh_interval, parameters={'VALUE': 'DURATION'})
+      self.calendar.add('REFRESH-INTERVAL', properties.refresh_interval, parameters={'VALUE': 'DURATION'})
 
     if common_vendor_fallbacks:
-      if calendar.uid:
-        calendar.pop('X-WR-RELCALID', None)
-        calendar.add('X-WR-RELCALID', calendar.uid)
+      if self.calendar.uid:
+        self.calendar.pop('X-WR-RELCALID', None)
+        self.calendar.add('X-WR-RELCALID', self.calendar.uid)
 
-      if calendar.refresh_interval:
-        calendar.pop('X-PUBLISHED-TTL', None)
-        calendar.add('X-PUBLISHED-TTL', icalendar.vDuration(calendar.refresh_interval).to_ical().decode())
-
-    return calendar
+      if self.calendar.refresh_interval:
+        self.calendar.pop('X-PUBLISHED-TTL', None)
+        self.calendar.add('X-PUBLISHED-TTL', icalendar.vDuration(self.calendar.refresh_interval).to_ical().decode())
 
   @staticmethod
   def validate_filter(filter: str) -> str | None:
@@ -165,15 +229,14 @@ class CalendarPipeline:
     finally:
       session.close()
 
-  def apply_filter(self, filter: str, deepcopy: bool = True) -> icalendar.Calendar:
+  @_modifies_calendar
+  def apply_filter(self, filter: str) -> icalendar.Calendar:
     """Get calendar with filtered events."""
-    calendar = self.copy(deepcopy)
-
     filter = filter.strip()
     if not filter:
-      return calendar
+      return
 
-    events = [component for component in calendar.subcomponents if component.name == 'VEVENT']
+    events = [component for component in self.calendar.subcomponents if component.name == 'VEVENT']
 
     session = self._create_session([(index, *self._create_row_data_from_event(event)) for index, event in enumerate(events)])
     try:
@@ -184,7 +247,7 @@ class CalendarPipeline:
 
     kept_components = []
     event_index = 0
-    for component in calendar.subcomponents:
+    for component in self.calendar.subcomponents:
       if component.name != 'VEVENT':
         kept_components.append(component)
         continue
@@ -193,8 +256,7 @@ class CalendarPipeline:
         kept_components.append(component)
       event_index += 1
 
-    calendar.subcomponents[:] = kept_components
-    return calendar
+    self.calendar.subcomponents[:] = kept_components
 
   @staticmethod
   def parse_transform(transform: str) -> tuple[list[tuple], str | None]:
@@ -216,6 +278,7 @@ class CalendarPipeline:
           duration = icalendar.vDuration.from_ical(value)
         except ValueError:
           return [], f'{name}: invalid ISO 8601 duration "{value}"'
+
         if name != 'shift' and duration < datetime.timedelta(0):
           continue  # negative clip values are ignored
         operations.append((name, duration))
@@ -261,15 +324,14 @@ class CalendarPipeline:
     _, error = CalendarPipeline.parse_transform(transform)
     return error
 
-  def apply_transform(self, transform: str, deepcopy: bool = True):
-    calendar = self.copy(deepcopy)
-
+  @_modifies_calendar
+  def apply_transform(self, transform: str):
     operations, error = CalendarPipeline.parse_transform(transform)
     if error:
       raise ValueError(error)
 
     for name, argument in operations:
-      events = [component for component in calendar.subcomponents if component.name == 'VEVENT']
+      events = [component for component in self.calendar.subcomponents if component.name == 'VEVENT']
 
       if name in ('clip-min-duration', 'clip-max-duration', 'shift'):
         for event in events:
@@ -310,11 +372,10 @@ class CalendarPipeline:
         CalendarPipeline._trim_overlaps(events, trim_start=name == 'overlap-trim-start')
 
       elif name == 'combine-all-day':
-        CalendarPipeline._combine_all_day(calendar, events)
+        CalendarPipeline._combine_all_day(self.calendar, events)
 
-    return calendar
-
-  def merge_events(self, other: 'CalendarPipeline', mode: str = MergeMode.OVERWRITE, deepcopy: bool = True):
+  @_modifies_calendar
+  def merge_events(self, other: 'CalendarPipeline', mode: str = MergeMode.OVERWRITE):
     """Merge events with other calendar.
 
     Events with duplicate UID are handled according to `mode`.
@@ -322,8 +383,7 @@ class CalendarPipeline:
     if mode not in (MergeMode.OVERWRITE, MergeMode.SKIP):
       raise ValueError(f'Unknown merge mode: {mode}')
 
-    calendar = self.copy(deepcopy)
-    existing_uids = {str(component.uid) for component in calendar.subcomponents if component.name == 'VEVENT'}
+    existing_uids = {str(component.uid) for component in self.calendar.subcomponents if component.name == 'VEVENT'}
 
     # collect events to insert (uid -> event), one pass over `other`
     incoming: dict[str, icalendar.Component] = {}
@@ -340,17 +400,17 @@ class CalendarPipeline:
     if mode == MergeMode.OVERWRITE:
       replaced_uids = existing_uids & incoming.keys()
       if replaced_uids:
-        calendar.subcomponents[:] = [
-          component for component in calendar.subcomponents if not (component.name == 'VEVENT' and str(component.uid) in replaced_uids)
+        self.calendar.subcomponents[:] = [
+          component for component in self.calendar.subcomponents if not (component.name == 'VEVENT' and str(component.uid) in replaced_uids)
         ]
 
     # insert
     for component in incoming.values():
-      calendar.add_component(copy.deepcopy(component))
+      self.calendar.add_component(copy.deepcopy(component))
 
-    calendar.add_missing_timezones()
-    return calendar
+    self.calendar.add_missing_timezones()
 
+  @_modifies_calendar
   def sort_components(self):
     """Soft sort icalendar components.
 
@@ -370,6 +430,8 @@ class CalendarPipeline:
       return (1, start or _MIN_DT, end or _MIN_DT, str(component.get('UID', '')))
 
     self.calendar.subcomponents.sort(key=build_sort_key)
+
+  # TODO move most of these static methods out of CalendarPipeline
 
   @staticmethod
   def _create_session(rows=()) -> sqlite3.Connection:
@@ -634,8 +696,12 @@ class CalendarFetchError(Exception):
   """Raised when a web calendar subscription cannot be fetched."""
 
 
-async def fetch_url(url: str) -> bytes:
+async def fetch_url(url: str) -> tuple[bytes | None, str | None]:
   """Downloads web calendar from url."""
+  content = None
+  reason = None
+  error = None
+
   try:
     async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
       response = await client.get(url)
@@ -643,12 +709,9 @@ async def fetch_url(url: str) -> bytes:
       content = response.content
       if len(content) > src.config.settings.max_web_calendar_file_size:
         raise ValueError('file too large')
-      return content
 
   except httpx.HTTPStatusError as exception:
     reason = f'HTTP {exception.response.status_code}'
-  except httpx.UnsupportedProtocol:
-    reason = 'missing http(s):// scheme'
   except httpx.ConnectError:
     reason = 'could not resolve/connect to host'
   except httpx.TimeoutException:
@@ -658,37 +721,50 @@ async def fetch_url(url: str) -> bytes:
   except httpx.HTTPError as exception:
     reason = exception.__class__.__name__
 
-  max_url_length = src.config.settings.max_error_url_length
-  truncated_url = url if len(url) <= max_url_length else url[:max_url_length] + '...'
-  raise CalendarFetchError(f'Could not load calendar {truncated_url}: {reason}') from None
+  if reason:
+    max_url_length = src.config.settings.max_error_url_length
+    truncated_url = url if len(url) <= max_url_length else url[:max_url_length] + '...'
+    error = f'Could not fetch calendar {truncated_url}: {reason}'
+
+  return content, error
+
+
+async def get_or_create_calendar_file(db: AsyncSession, calendar: CalendarPipeline) -> CalendarFile:
+  """Return the pooled CalendarFile for this content, creating it if it does not exist yet."""
+  calendar_file = await database_requests.get_calendar_file_by_hash(db, calendar.hash)
+  if calendar_file is not None:
+    return calendar_file
+
+  calendar_file = CalendarFile(
+    hash=calendar.hash,
+    data=calendar.text,
+    event_count=calendar.event_count,
+    range_start=calendar.range_start,
+    range_end=calendar.range_end,
+  )
+
+  try:
+    async with db.begin_nested():
+      db.add(calendar_file)
+  except IntegrityError:
+    # someone else stored the same content between our lookup and the insert
+    calendar_file = await database_requests.get_calendar_file_by_hash(db, calendar.hash)
+  return calendar_file
 
 
 async def update_export_data(db: AsyncSession, export: CalendarExport, now: datetime.datetime | None = None):
   """Recompute an export's output"""
   now = now or datetime.datetime.now(datetime.timezone.utc)
 
-  old_hash = CalendarPipeline(export.output_ics.encode('utf-8')).hash if export.output_ics else None
+  old_hash = CalendarPipeline(export.output_ics).hash if export.output_ics else None
 
   merged_calendar = None
   sources = await database_requests.get_export_sources_ordered(db, export.id)
   for source in sources:
-    # get ics data from source
+    # get ics data from source: the active file of the import
 
-    calendar_import = await database_requests.get_import_by_id(db, source.import_id)
-
-    if calendar_import is None or calendar_import.active_source_id is None:
-      continue
-
-    active_source = await database_requests.get_import_source_by_id(db, calendar_import.active_source_id)
-    if active_source is None:
-      continue
-
-    if active_source.kind == CalendarImportSourceKind.STATIC:
-      static_file = await database_requests.get_static_file_by_id(db, active_source.static_file_id) if active_source.static_file_id else None
-      raw_ics = static_file.raw_ics if static_file else None
-    else:
-      latest = await database_requests.get_latest_snapshot_for_web_subscription(db, active_source.web_subscription_id)
-      raw_ics = latest.raw_ics if latest else None
+    calendar_file = await database_requests.get_active_calendar_file_for_import(db, source.import_id)
+    raw_ics = calendar_file.data if calendar_file else None
 
     if not raw_ics:
       continue
@@ -696,9 +772,9 @@ async def update_export_data(db: AsyncSession, export: CalendarExport, now: date
     # load and apply pipeline
 
     try:
-      source_calendar = CalendarPipeline(raw_ics.encode('utf-8'))
-      source_calendar.apply_filter(source.filter, deepcopy=False)
-      source_calendar.apply_transform(source.transform, deepcopy=False)
+      source_calendar = CalendarPipeline(raw_ics)
+      source_calendar.apply_filter(source.filter)
+      source_calendar.apply_transform(source.transform)
     except Exception:
       logger.exception(f'Could not load, filter or transform calendar (import {source.import_id})')
       continue
@@ -706,21 +782,20 @@ async def update_export_data(db: AsyncSession, export: CalendarExport, now: date
     if merged_calendar is None:
       merged_calendar = source_calendar
     else:
-      merged_calendar.merge_events(source_calendar, deepcopy=False)
+      merged_calendar.merge_events(source_calendar)
 
   if merged_calendar is None:
     return
 
   # TODO apply calendar fields
-  # merged_calendar.apply_calendar_properties(export.calendar_properties, deepcopy=False)
+  # merged_calendar.apply_calendar_properties(export.calendar_properties)
 
   # TODO remove events that are in deleted_uids, add delete as transform predicate (ignore all other ops)
 
   merged_calendar.sort_components()
 
-  calendar_stats = merged_calendar.stats()
-  export.output_ics = merged_calendar.calendar.to_ical().decode('utf-8')
-  export.event_count = calendar_stats.event_count
+  export.output_ics = merged_calendar.text
+  export.event_count = merged_calendar.event_count
 
   await db.flush()
 

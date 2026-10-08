@@ -21,22 +21,23 @@ BOARD_PAGE_PATH = f'{STATIC_DIR_PATH}/board.html'
 
 _stop_event: asyncio.Event | None = None
 _scheduler_task: asyncio.Task | None = None
+_cleanup_task: asyncio.Task | None = None
 
 
 @contextlib.asynccontextmanager
 async def lifespan(app: fastapi.FastAPI):
-  global _stop_event, _scheduler_task
+  global _stop_event, _scheduler_task, _cleanup_task
   async with src.services.database_requests.engine.begin() as conn:
     await conn.run_sync(src.models.Base.metadata.create_all)
 
   _stop_event = asyncio.Event()
   _scheduler_task = asyncio.create_task(src.services.scheduler.scheduler_loop(_stop_event))
+  _cleanup_task = asyncio.create_task(src.services.scheduler.cleanup_loop(_stop_event))
 
   yield
 
   _stop_event.set()
-  if _scheduler_task:
-    await _scheduler_task
+  await asyncio.gather(*(task for task in (_scheduler_task, _cleanup_task) if task))
 
 
 app = fastapi.FastAPI(lifespan=lifespan)

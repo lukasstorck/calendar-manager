@@ -151,12 +151,12 @@
       </div>
     </div>
 
-    <!-- Add source to an existing import: tabbed by source type -->
+    <!-- New import: from a web calendar URL or an uploaded .ics file -->
     <div class="modal" tabindex="-1" id="import-wizard-modal">
       <div class="modal-dialog">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title">Add source</h5>
+            <h5 class="modal-title">New import</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
           </div>
           <div class="modal-body">
@@ -183,7 +183,7 @@
               </div>
               <div class="tab-pane" id="import-tab-file">
                 <p class="small text-body-secondary">
-                  Upload a single .ics file. It's imported once and won't update on its own — replace it manually whenever it changes.
+                  Upload a single .ics file. It's imported once and won't update on its own &mdash; create a new import whenever it changes.
                 </p>
                 <div class="mb-3">
                   <label class="form-label" for="wizard-file">Calendar file</label>
@@ -192,13 +192,17 @@
               </div>
             </div>
             <div class="mb-3">
-              <label class="form-label" for="wizard-label">Source label</label>
-              <input type="text" id="wizard-label" class="form-control" placeholder="Label (optional)" />
+              <label class="form-label" for="wizard-name">Name</label>
+              <input type="text" id="wizard-name" class="form-control" placeholder="Name (optional)" />
+              <div class="invalid-feedback" id="wizard-error"></div>
             </div>
           </div>
           <div class="modal-footer">
             <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-            <button class="btn btn-primary" id="wizard-ok-button"><i class="fa-solid fa-check me-1"></i>Add</button>
+            <button class="btn btn-primary" id="wizard-ok-button">
+              <span class="spinner-border spinner-border-sm me-1 d-none" id="wizard-spinner" aria-hidden="true"></span>
+              <i class="fa-solid fa-check me-1" id="wizard-ok-icon"></i>Add
+            </button>
           </div>
         </div>
       </div>
@@ -369,96 +373,74 @@
       </div>
     </div>
 
-    <!-- Source edit / inspect modal: title is the source label (inline
-         renamed the same way import names are), a low-key type indicator and
-         an "Active source" badge sit behind it, then type-specific fields
-         below (web calendar vs. uploaded file). -->
-    <div class="modal" tabindex="-1" id="source-edit-modal">
+    <!-- Import details modal: status of a web calendar, backup setting and
+         the list of stored file versions (file references) of an import. -->
+    <div class="modal" tabindex="-1" id="import-details-modal">
       <div class="modal-dialog modal-lg">
         <div class="modal-content">
           <div class="modal-header">
             <div class="d-flex align-items-center gap-2 flex-wrap flex-grow-1 me-2">
-              <h5 id="source-edit-title-display" class="modal-title text-break mb-0"></h5>
-              <div class="input-group input-group-sm d-none" style="max-width: 300px" id="source-edit-title-controls">
-                <input type="text" class="form-control form-control-sm" id="source-edit-title-input" />
-                <button class="btn btn-sm btn-outline-success" id="source-edit-title-accept" title="Save" disabled>
-                  <i class="fa-solid fa-check"></i>
-                </button>
-                <button class="btn btn-sm btn-outline-danger" id="source-edit-title-cancel" title="Cancel">
-                  <i class="fa-solid fa-xmark"></i>
-                </button>
-              </div>
-              <button class="btn btn-sm btn-outline-secondary" id="source-edit-title-edit" title="Rename">
-                <i class="fa-solid fa-pen"></i>
-              </button>
-              <span class="text-body-secondary small" id="source-edit-type-label"></span>
-              <span class="badge text-bg-primary d-none" id="source-edit-active-badge">Active source</span>
+              <h5 id="import-details-title" class="modal-title text-break mb-0"></h5>
+              <span class="text-body-secondary small" id="import-details-type-label"></span>
             </div>
             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
           </div>
           <div class="modal-body">
             <!-- Web calendar fields -->
-            <div class="row g-3 mb-3 d-none" id="source-edit-web-fields">
+            <div class="row g-3 mb-3 d-none" id="import-details-web-fields">
               <div class="col-sm-4">
                 <div class="small text-body-secondary">Status</div>
                 <div>
-                  <span id="source-edit-status-success" class="badge text-bg-success d-none"><i class="fa-solid fa-check me-1"></i>Success</span>
-                  <span id="source-edit-status-fail" class="d-none">
+                  <span id="import-details-status-success" class="badge text-bg-success d-none"><i class="fa-solid fa-check me-1"></i>Success</span>
+                  <span id="import-details-status-fail" class="d-none">
                     <span class="badge text-bg-danger"><i class="fa-solid fa-xmark me-1"></i>Failed</span>
-                    <div class="small text-body-secondary mt-1" id="source-edit-status-fail-reason"></div>
+                    <div class="small text-body-secondary mt-1 text-break" id="import-details-status-fail-reason"></div>
                   </span>
+                  <span id="import-details-status-pending" class="text-body-secondary d-none">Not fetched yet</span>
                 </div>
               </div>
               <div class="col-sm-4">
-                <div class="small text-body-secondary">Last update</div>
-                <div id="source-edit-last-pulled"></div>
+                <div class="small text-body-secondary">Last fetch</div>
+                <div id="import-details-last-fetched"></div>
               </div>
               <div class="col-sm-4">
                 <div class="small text-body-secondary">Source URL</div>
-                <a id="source-edit-url" href="#" target="_blank" rel="noopener" class="d-inline-block text-truncate" style="max-width: 100%"></a>
+                <a id="import-details-url" href="#" target="_blank" rel="noopener" class="d-inline-block text-truncate" style="max-width: 100%"></a>
               </div>
             </div>
-            <div class="d-none" id="source-edit-web-backup-section">
+            <div class="d-none" id="import-details-backup-section">
               <div class="form-check form-switch mb-3">
-                <input class="form-check-input" type="checkbox" id="source-edit-contribute-backup" />
-                <label class="form-check-label" for="source-edit-contribute-backup">
+                <input class="form-check-input" type="checkbox" id="import-details-backup" />
+                <label class="form-check-label" for="import-details-backup">
                   Backup
                   <div class="small text-body-secondary">
-                    Saves a snapshot of this calendar whenever its source changes, so earlier versions can be recovered later. Snapshots are stored per URL and
-                    pooled across users to avoid duplicates: if anyone else has already backed up this exact URL, those snapshots are visible to you too, and
-                    yours would be visible to them. This is rarely a real concern, since private calendar links usually carry their own unique access token.
+                    Keeps a copy of this calendar whenever its content changes, so earlier versions can be recovered later.
                   </div>
                 </label>
               </div>
-              <h6>Backups</h6>
-              <div id="source-edit-snapshots">
-                <div id="source-edit-snapshots-loading" class="text-body-secondary small d-none">Loading...</div>
-                <div id="source-edit-snapshots-empty" class="text-body-secondary small d-none">No backups yet.</div>
-                <div id="source-edit-snapshots-list"></div>
+            </div>
+
+            <!-- Stats of the active file (uploaded files and web calendars alike) -->
+            <div class="row g-3 mb-3">
+              <div class="col-sm-4">
+                <div class="small text-body-secondary">Added</div>
+                <div id="import-details-created"></div>
+              </div>
+              <div class="col-sm-8">
+                <div class="small text-body-secondary">Events</div>
+                <div id="import-details-stats"></div>
               </div>
             </div>
 
-            <!-- Uploaded file fields -->
-            <div class="row g-3 mb-3 d-none" id="source-edit-file-fields">
-              <div class="col-sm-4">
-                <div class="small text-body-secondary">Added</div>
-                <div id="source-edit-file-added"></div>
-              </div>
-              <div class="col-sm-4">
-                <div class="small text-body-secondary">Events</div>
-                <div id="source-edit-file-stats"></div>
-              </div>
-            </div>
-            <div class="d-none d-flex flex-wrap gap-2" id="source-edit-file-actions">
-              <a class="btn btn-outline-secondary" id="source-edit-file-download" download> <i class="fa-solid fa-download me-1"></i>Download </a>
-              <div class="dropdown">
-                <button class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"><i class="fa-solid fa-copy me-1"></i>Copy to...</button>
-                <ul class="dropdown-menu" id="source-edit-file-copy-targets"></ul>
-              </div>
+            <h6>Stored versions</h6>
+            <div id="import-details-versions">
+              <div id="import-details-versions-loading" class="text-body-secondary small d-none">Loading...</div>
+              <div id="import-details-versions-empty" class="text-body-secondary small d-none">No stored versions.</div>
+              <div id="import-details-versions-list"></div>
             </div>
           </div>
           <div class="modal-footer justify-content-end">
-            <button class="btn btn-outline-danger" id="source-edit-delete-button"><i class="fa-solid fa-trash me-1"></i>Delete source</button>
+            <button class="btn btn-outline-secondary" id="import-details-download-button"><i class="fa-solid fa-download me-1"></i>Download</button>
             <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
           </div>
         </div>
@@ -515,9 +497,12 @@
               <span class="d-none d-sm-inline">Rename</span>
             </button>
             <div class="btn-group">
-              <button class="btn btn-sm btn-outline-primary" data-add-source title="Add source">
-                <i class="fa-solid fa-plus" aria-hidden="true"></i>
-                <span class="d-none d-sm-inline">Source</span>
+              <button class="btn btn-sm btn-outline-primary" data-details title="Details and versions">
+                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                <span class="d-none d-sm-inline">Details</span>
+              </button>
+              <button class="btn btn-sm btn-outline-secondary" data-download title="Download">
+                <i class="fa-solid fa-download"></i>
               </button>
               <button class="btn btn-sm btn-outline-danger" data-delete title="Delete import">
                 <i class="fa-solid fa-trash"></i>
@@ -525,58 +510,41 @@
             </div>
           </div>
         </div>
-        <div class="text-body-secondary small mt-2 d-none" data-sources-empty>No sources yet. Add a web calendar or upload a file.</div>
-        <div class="mt-2" data-sources></div>
-      </div>
-    </template>
-
-    <!-- One line always: radio, type icon (clickable, opens the edit modal),
-         label, and a right-aligned edit/delete button group that's simply
-         hidden below sm rather than reflowed. Stats sit on their own line
-         below. No fixed pixel widths -- the icon button and label size to
-         their content and Bootstrap's flex/gap utilities handle spacing at
-         every width. -->
-    <template id="template-source-row">
-      <div class="p-2 rounded">
-        <div class="d-flex align-items-center gap-2">
-          <input class="form-check-input flex-shrink-0 mt-0" type="radio" data-activate />
-          <button type="button" class="btn btn-sm p-1 flex-shrink-0 border-0 bg-transparent" data-open-edit>
+        <!-- Type icon (clickable, opens the details modal) with the URL (web calendars) next to it, stats below -->
+        <div class="d-flex align-items-center gap-2 mt-2">
+          <button type="button" class="btn btn-sm p-1 flex-shrink-0 border-0 bg-transparent" data-open-details>
             <i data-icon></i>
           </button>
-          <span class="flex-grow-1 text-break" style="min-width: 0" data-label></span>
-          <div class="btn-group flex-shrink-0 d-none d-sm-flex" data-actions>
-            <button class="btn btn-sm btn-outline-secondary" data-edit title="View source details">
-              <i class="fa-solid fa-eye"></i>
-            </button>
-            <button class="btn btn-sm btn-outline-danger" data-delete-source title="Remove source">
-              <i class="fa-solid fa-trash"></i>
-            </button>
-          </div>
+          <span class="text-break small text-body-secondary" style="min-width: 0" data-url></span>
         </div>
         <div class="text-body-secondary small ps-4" data-stats></div>
+        <div class="text-danger small ps-4 d-none text-break" data-error></div>
       </div>
     </template>
 
-    <template id="template-snapshot-row">
+    <!-- One stored version (file reference) of an import -->
+    <template id="template-file-reference-row">
       <div class="d-flex align-items-center gap-2 flex-wrap py-2 border-bottom">
-        <span class="small" data-fetched-at></span>
+        <span class="small" data-created-at></span>
         <span class="badge text-bg-secondary d-none" data-latest-badge>Latest</span>
         <span class="text-body-secondary small" data-stats></span>
         <div class="dropdown ms-auto">
-          <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"><i class="fa-solid fa-copy me-1"></i>Save as...</button>
-          <ul class="dropdown-menu dropdown-menu-end" data-target-list>
+          <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+            <i class="fa-solid fa-floppy-disk me-1"></i>Save as...
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end">
             <li>
-              <a class="dropdown-item" data-download-button download><i class="fa-solid fa-download me-1"></i>Download</a>
+              <button class="dropdown-item" data-download-button><i class="fa-solid fa-download me-1"></i>Download</button>
             </li>
-            <li><hr class="dropdown-divider" /></li>
+            <li>
+              <button class="dropdown-item" data-copy-button><i class="fa-solid fa-copy me-1"></i>New Import</button>
+            </li>
           </ul>
         </div>
       </div>
     </template>
 
-    <!-- Generic "<name>" dropdown item, reused for both the snapshot
-         "save as file to..." target list and the file source's "copy to..."
-         target list. -->
+    <!-- Generic "<name>" dropdown item, used for the export modal's "Add source" menu. -->
     <template id="template-dropdown-target-item">
       <li><button class="dropdown-item text-truncate" data-target-button></button></li>
     </template>
@@ -624,10 +592,12 @@
         <div class="input-group input-group-sm mb-2">
           <span class="input-group-text" style="width: 5.5rem">Filter</span>
           <input type="text" class="form-control font-monospace" spellcheck="false" data-source-filter />
+          <div class="invalid-feedback" data-source-filter-error></div>
         </div>
         <div class="input-group input-group-sm">
           <span class="input-group-text" style="width: 5.5rem">Transform</span>
           <input type="text" class="form-control font-monospace" spellcheck="false" data-source-transform />
+          <div class="invalid-feedback" data-source-transform-error></div>
         </div>
       </div>
     </template>

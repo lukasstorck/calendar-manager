@@ -150,16 +150,17 @@ shift:PT1H set-location:"Room 1" remove:description remove:extra-properties
 
 ### TODO
 
-- make calendar import backup individually, no single backup for same url
-- normalize calendar file before saving -> google seems to be inconsistant with order -> should have same hash for change detection
+- bug: calendar export source field validation: error is set on wrong field
+- bug: setting error in ui is interrupting work flow by focusing different field
 
+- normalize calendar file before saving -> google seems to be inconsistant with order -> should have same hash for change detection
 - add documentation strings for all apis (so that they can be read by swagger)
 
-- rework scheduler
 
 ### BACKLOG
 
 - add non 200 http codes into pydantic documentation
+- bug: web calendar details are not updated when opened after a new version was fetched whilie the stored version show the updated information
 
 - allow multi-line in descriptions
 
@@ -175,10 +176,6 @@ shift:PT1H set-location:"Room 1" remove:description remove:extra-properties
     - date order
     - date and time separators
   - change date range display format for long ranges, e.g. when there are multiple years, only show years, or with same year, only show day, months and times
-
-- add "add rule to description" for calendar exports (three options: no, raw rule, interpreted sentence "from ... to ... " instead of from:... to:...)
-
-- read healthcheck from calendar gateway
 
 - calendar export sources filter/transform user input rework:
   - a canvas with movable (drag and drop) building blocks

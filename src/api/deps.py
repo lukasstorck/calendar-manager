@@ -1,5 +1,6 @@
 import datetime
 import typing
+import urllib.parse
 import uuid
 
 import fastapi
@@ -8,6 +9,7 @@ import pydantic
 import src.api.auth
 import src.models
 import src.services.database_requests
+import src.services.naming
 
 
 async def get_current_user(request: fastapi.Request, db: 'DatabaseSession') -> src.models.User:
@@ -104,3 +106,105 @@ class ExportSummaryResponse(pydantic.BaseModel):
   event_count: int
   updated_at: datetime.datetime
   sources: list[ExportSourceData] = pydantic.Field(default_factory=list)
+
+
+class ImportSummaryResponse(pydantic.BaseModel):
+  """Summary response for a calendar import."""
+
+  id: uuid.UUID
+  name: str
+  created_at: datetime.datetime
+  event_count: int
+  range_start: datetime.datetime | None
+  range_end: datetime.datetime | None
+  # web calendar only, otherwise None
+  url: str | None
+  backup: bool
+  last_fetched_at: datetime.datetime | None
+  last_success_at: datetime.datetime | None
+  last_error: str | None
+
+
+class ImportFileReferenceResponse(pydantic.BaseModel):
+  """Summary response for a calendar import file reference."""
+
+  id: uuid.UUID
+  created_at: datetime.datetime
+  event_count: int
+  range_start: datetime.datetime | None
+  range_end: datetime.datetime | None
+
+
+_ALLOWED_SCHEMES_FOR_CREATE_IMPORT_REQUEST_URL = {'http', 'https', 'webcal', 'webcals'}
+
+
+class ImportCreateRequest(pydantic.BaseModel):
+  """Create request for a calendar import, sent as multipart form data (a file
+  upload needs it). Exactly one of `url` or `file` is required.
+  """
+
+  name: str | None = None
+  url: str | None = None
+  file: fastapi.UploadFile | None = None    # TODO: limit file size to settings.max_web_calendar_file_size
+
+  @pydantic.field_validator('url')
+  @classmethod
+  def _validate_url(cls, value: str | None) -> str | None:
+    if value is None:
+      return None
+
+    value = value.strip()
+
+    if not value:
+      raise ValueError('URL must not be empty')
+
+    # accept URLs without scheme
+    if '://' not in value and not value.startswith('//'):
+      value = f'https://{value}'
+    elif value.startswith('//'):
+      value = f'https:{value}'
+
+    try:
+      url = pydantic.TypeAdapter(pydantic.AnyUrl).validate_python(value)
+    except pydantic.ValidationError as exception:
+      raise ValueError('Invalid calendar URL') from exception
+
+    if url.scheme not in _ALLOWED_SCHEMES_FOR_CREATE_IMPORT_REQUEST_URL:
+      schemes = ', '.join(sorted(_ALLOWED_SCHEMES_FOR_CREATE_IMPORT_REQUEST_URL))
+      raise ValueError(f'URL scheme must be one of: {schemes}')
+
+    if not url.host:
+      raise ValueError('URL must contain a hostname')
+
+    return str(url)
+
+  @pydantic.model_validator(mode='after')
+  def _require_exactly_one_source(self):
+    if (self.url is None) == (self.file is None):
+      raise ValueError('exactly one of url or file is required')
+    return self
+
+
+class ImportUpdateRequest(pydantic.BaseModel):
+  """Update request for a calendar import. Only the fields provided are changed."""
+
+  name: str | None = None
+  backup: bool | None = None
+
+
+class CalendarDownloadResponse(fastapi.Response):
+  """Response for every calendar file download."""
+
+  media_type = 'text/calendar'
+  EXTENSION = '.ics'
+
+  def __init__(self, content: str, filename: str, inline: bool = False, **kwargs):
+    disposition = 'inline' if inline else 'attachment'
+
+    ascii_sanitized_name = src.services.naming.sanitize_text(filename, src.services.naming.ILLEGAL_LINK_CHARACTERS) or 'calendar'
+    ascii_filename = ascii_sanitized_name + self.EXTENSION
+    utf8_filename = urllib.parse.quote(filename, safe='') + self.EXTENSION
+
+    headers = {'Content-Disposition': (f'{disposition}; filename="{ascii_filename}"; filename*=UTF-8\'\'{utf8_filename}')}
+
+    super().__init__(content=content, headers=headers, **kwargs)

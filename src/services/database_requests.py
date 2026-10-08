@@ -1,8 +1,9 @@
+import datetime
 import uuid
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import selectinload
 
 import src.config
 from src.models import (
@@ -10,13 +11,10 @@ from src.models import (
   BoardCalendar,
   CalendarExport,
   CalendarExportSource,
+  CalendarFile,
   CalendarImport,
-  CalendarImportSource,
-  CalendarImportSourceKind,
-  Snapshot,
-  StaticFile,
+  CalendarImportFileReference,
   User,
-  WebSubscription,
 )
 
 engine = create_async_engine(src.config.settings.database_url, echo=False, pool_pre_ping=True)
@@ -34,7 +32,7 @@ async def get_db():
 
 
 async def get_user_by_id(db: AsyncSession, user_id: str) -> User | None:
-  """Fetch a user by primary key."""
+  """Fetch a user by id."""
   return await db.get(User, user_id)
 
 
@@ -46,16 +44,6 @@ async def get_user_by_id(db: AsyncSession, user_id: str) -> User | None:
 async def get_import_by_id(db: AsyncSession, import_id: uuid.UUID) -> CalendarImport | None:
   """Fetch a calendar import by primary key."""
   return await db.get(CalendarImport, import_id)
-
-
-async def get_import_by_id_with_sources(db: AsyncSession, import_id: uuid.UUID) -> CalendarImport | None:
-  """Fetch a calendar import by primary key, with its sources eager-loaded."""
-  query = select(CalendarImport) \
-          .where(CalendarImport.id == import_id) \
-          .options(selectinload(CalendarImport.sources))  # fmt: skip
-
-  result = await db.execute(query)
-  return result.scalar_one_or_none()
 
 
 async def get_imports_for_user(db: AsyncSession, user_id: str) -> list[CalendarImport]:
@@ -89,165 +77,153 @@ async def get_valid_import_ids_for_user(db: AsyncSession, user_id: str, import_i
   return set(result.scalars().all())
 
 
+async def get_web_imports(db: AsyncSession) -> list[CalendarImport]:
+  """All calendar imports of all users that are based on a web calendar."""
+  query = select(CalendarImport) \
+          .where(CalendarImport.url.is_not(None))  # fmt: skip
+
+  result = await db.execute(query)
+  return list(result.scalars().all())
+
+
+async def create_calendar_import(
+  db: AsyncSession,
+  user_id: str,
+  name: str,
+  calendar_file: CalendarFile,
+  now: datetime.datetime,
+  url: str | None = None,
+) -> CalendarImport:
+  """Create an import with its first file. A url makes it a web calendar, otherwise it is a static file."""
+  is_web_calendar = url is not None
+
+  calendar_import = CalendarImport(
+    user_id=user_id,
+    name=name,
+    url=url,
+    active_file_id=calendar_file.id,
+    last_fetched_at=now if is_web_calendar else None,
+    last_success_at=now if is_web_calendar else None,
+  )
+
+  db.add(calendar_import)
+  await db.flush()
+
+  await add_file_reference(db, calendar_import.id, calendar_file.id, now)
+  return calendar_import
+
+
 # ----------------------
-# region: Import sources
+# region: Calendar files
 # ----------------------
 
 
-async def get_import_source_by_id(db: AsyncSession, import_source_id: uuid.UUID) -> CalendarImportSource | None:
-  """Fetch a calendar import source by primary key."""
-  return await db.get(CalendarImportSource, import_source_id)
+async def get_calendar_file_by_id(db: AsyncSession, file_id: uuid.UUID) -> CalendarFile | None:
+  """Fetch a calendar file by id."""
+  return await db.get(CalendarFile, file_id)
 
 
-async def get_import_sources_for_import(db: AsyncSession, import_id: uuid.UUID) -> list[CalendarImportSource]:
-  """List all sources attached to a given import."""
-  query = select(CalendarImportSource) \
-          .where(CalendarImportSource.import_id == import_id)  # fmt: skip
-
-  result = await db.execute(query)
-  return list(result.scalars().all())
-
-
-async def get_fallback_import_source(db: AsyncSession, import_id: uuid.UUID, excluded_source_id: uuid.UUID) -> CalendarImportSource | None:
-  """Most recently created source on an import, excluding one specific source id."""
-  query = select(CalendarImportSource) \
-          .where(
-            CalendarImportSource.import_id == import_id,
-            CalendarImportSource.id != excluded_source_id
-          ) \
-          .order_by(CalendarImportSource.created_at.desc()) \
-          .limit(1)  # fmt: skip
+async def get_calendar_file_by_hash(db: AsyncSession, file_hash: str) -> CalendarFile | None:
+  """Find a calendar file by its content hash."""
+  query = select(CalendarFile) \
+          .where(CalendarFile.hash == file_hash)  # fmt: skip
 
   result = await db.execute(query)
   return result.scalar_one_or_none()
 
 
-# --------------------
-# region: Static Files
-# --------------------
-
-
-async def get_unreferenced_static_file_ids(db: AsyncSession) -> list[uuid.UUID]:
-  """Ids of StaticFile rows no CalendarImportSource references anymore."""
-  query = select(StaticFile.id) \
-          .where(StaticFile.id.not_in(
-            select(CalendarImportSource.static_file_id)
-            .where(CalendarImportSource.static_file_id.is_not(None))
-          ))  # fmt: skip
+async def get_calendar_file_stats(db: AsyncSession, file_id: uuid.UUID):
+  """Calendar file stats."""
+  query = select(CalendarFile.event_count, CalendarFile.range_start, CalendarFile.range_end) \
+          .where(CalendarFile.id == file_id)  # fmt: skip
 
   result = await db.execute(query)
-  return list(result.scalars().all())
+  return result.one()
 
 
-async def get_static_file_by_id(db: AsyncSession, static_file_id: uuid.UUID) -> StaticFile | None:
-  """Fetch a static file by primary key."""
-  return await db.get(StaticFile, static_file_id)
-
-
-async def find_static_file_by_hash(db: AsyncSession, file_hash: str) -> StaticFile | None:
-  """Find a pooled static file by its content hash."""
-  query = select(StaticFile) \
-          .where(StaticFile.file_hash == file_hash)  # fmt: skip
+async def get_active_calendar_file_for_import(db: AsyncSession, import_id: uuid.UUID) -> CalendarFile | None:
+  """The referenced active calendar file of an import, so the most recent backup or the uploaded file."""
+  query = select(CalendarFile) \
+          .join(CalendarImport, CalendarImport.active_file_id == CalendarFile.id) \
+          .where(CalendarImport.id == import_id)  # fmt: skip
 
   result = await db.execute(query)
   return result.scalar_one_or_none()
 
 
-# -------------------------
-# region: Web Subscriptions
-# -------------------------
+async def delete_unreferenced_calendar_files(db: AsyncSession):
+  """Delete CalendarFile rows that no file reference and no import's active file points at.
 
-
-async def find_owned_web_import_source_for_subscription(db: AsyncSession, user_id: str, web_subscription_id: uuid.UUID) -> CalendarImportSource | None:
-  """Find any web import source the user owns that is subscribed to the given web subscription."""
-  query = select(CalendarImportSource) \
-          .join(CalendarImport, CalendarImport.id == CalendarImportSource.import_id) \
+  Returns the number of deleted rows. Must be committed.
+  """
+  query = delete(CalendarFile) \
           .where(
-            CalendarImport.user_id == user_id,
-            CalendarImportSource.kind == CalendarImportSourceKind.WEB,
-            CalendarImportSource.web_subscription_id == web_subscription_id,
-          ) \
-          .limit(1)  # fmt: skip
-
-  result = await db.execute(query)
-  return result.scalar_one_or_none()
-
-
-async def get_unreferenced_web_subscription_ids(db: AsyncSession) -> list[uuid.UUID]:
-  """Ids of WebSubscription rows no CalendarImportSource references anymore."""
-  query = select(WebSubscription.id) \
-          .where(
-            WebSubscription.id.not_in(
-              select(CalendarImportSource.web_subscription_id)
-              .where(CalendarImportSource.web_subscription_id.is_not(None)
-          )))  # fmt: skip
-
-  result = await db.execute(query)
-  return list(result.scalars().all())
-
-
-async def get_web_subscription_by_id(db: AsyncSession, web_subscription_id: uuid.UUID) -> WebSubscription | None:
-  """Fetch a web subscription by primary key."""
-  return await db.get(WebSubscription, web_subscription_id)
-
-
-async def find_web_subscription_by_url(db: AsyncSession, url: str) -> WebSubscription | None:
-  """Find a pooled web subscription by its URL."""
-  query = select(WebSubscription) \
-          .where(WebSubscription.url == url)  # fmt: skip
-
-  result = await db.execute(query)
-  return result.scalar_one_or_none()
-
-
-async def get_all_web_subscriptions(db: AsyncSession) -> list[WebSubscription]:
-  """All web subscriptions across all users."""
-  query = select(WebSubscription)
-  result = await db.execute(query)
-  return list(result.scalars().all())
-
-
-# -------------------------
-# region: Snapshots
-# -------------------------
-
-
-async def get_snapshot_by_id(db: AsyncSession, snapshot_id: uuid.UUID) -> Snapshot | None:
-  """Fetch a snapshot by primary key."""
-  return await db.get(Snapshot, snapshot_id)
-
-
-async def find_snapshot_by_hash(db: AsyncSession, web_subscription_id: uuid.UUID, file_hash: str) -> Snapshot | None:
-  """Find a subscription's snapshot with a given content hash."""
-  query = select(Snapshot) \
-          .where(
-            Snapshot.web_subscription_id == web_subscription_id,
-            Snapshot.file_hash == file_hash
+            CalendarFile.id.not_in(select(CalendarImportFileReference.file_id)),
+            CalendarFile.id.not_in(select(CalendarImport.active_file_id))
           )  # fmt: skip
 
+  result: CursorResult = await db.execute(query)
+  return result.rowcount
+
+
+# -------------------------------
+# region: Import file references
+# -------------------------------
+
+
+async def get_file_reference_by_id(db: AsyncSession, file_reference_id: uuid.UUID) -> CalendarImportFileReference | None:
+  """Fetch an import file reference by primary key."""
+  return await db.get(CalendarImportFileReference, file_reference_id)
+
+
+async def get_file_references_for_import(db: AsyncSession, import_id: uuid.UUID):
+  """File reference information with calendar file stats for all file references of an import, newest first."""
+  query = select(
+            CalendarImportFileReference.id,
+            CalendarImportFileReference.created_at,
+            CalendarFile.event_count,
+            CalendarFile.range_start,
+            CalendarFile.range_end,
+          ) \
+          .select_from(CalendarImportFileReference) \
+          .join(CalendarFile, CalendarFile.id == CalendarImportFileReference.file_id) \
+          .where(CalendarImportFileReference.import_id == import_id) \
+          .order_by(CalendarImportFileReference.created_at.desc())  # fmt: skip
+
   result = await db.execute(query)
-  return result.scalar_one_or_none()
+  return list(result.all())
 
 
-async def get_latest_snapshot_for_web_subscription(db: AsyncSession, web_subscription_id: uuid.UUID) -> Snapshot | None:
-  """Most recently fetched snapshot for a web subscription, if any."""
-  query = select(Snapshot) \
-          .where(Snapshot.web_subscription_id == web_subscription_id) \
-          .order_by(Snapshot.fetched_at.desc()) \
-          .limit(1)  # fmt: skip
-
-  result = await db.execute(query)
-  return result.scalar_one_or_none()
+async def add_file_reference(db: AsyncSession, import_id: uuid.UUID, file_id: uuid.UUID, created_at: datetime.datetime):
+  """Register a file as a new file reference of an import."""
+  file_reference = CalendarImportFileReference(import_id=import_id, file_id=file_id, created_at=created_at)
+  db.add(file_reference)
+  await db.flush()
 
 
-async def get_snapshots_for_web_subscription(db: AsyncSession, web_subscription_id: uuid.UUID) -> list[Snapshot]:
-  """All snapshots for a web subscription, newest first."""
-  query = select(Snapshot) \
-          .where(Snapshot.web_subscription_id == web_subscription_id) \
-          .order_by(Snapshot.fetched_at.desc())  # fmt: skip
+async def get_file_references_oldest_first(db: AsyncSession, import_id: uuid.UUID) -> list[CalendarImportFileReference]:
+  """All FileReferences of a calendar import, oldest first."""
+  query = select(CalendarImportFileReference) \
+          .where(CalendarImportFileReference.import_id == import_id) \
+          .order_by(CalendarImportFileReference.created_at)  # fmt: skip
 
   result = await db.execute(query)
   return list(result.scalars().all())
+
+
+async def delete_file_references_by_ids(db: AsyncSession, file_reference_ids: list[uuid.UUID]):
+  """Remove ImportFileReferences with the given ids.
+
+  Must be committed.
+  """
+  if not file_reference_ids:
+    return 0
+
+  query = delete(CalendarImportFileReference) \
+          .where(CalendarImportFileReference.id.in_(file_reference_ids))  # fmt: skip
+
+  result: CursorResult = await db.execute(query)
+  return result.rowcount
 
 
 # ---------------
@@ -307,8 +283,8 @@ async def get_export_sources_ordered(db: AsyncSession, export_id: uuid.UUID) -> 
   return list(result.scalars().all())
 
 
-async def delete_export_sources_for_export(db: AsyncSession, export_id: uuid.UUID) -> None:
-  """Remove all CalendarExportSource rows for an export (bulk delete).
+async def delete_export_sources_for_export(db: AsyncSession, export_id: uuid.UUID):
+  """Remove all CalendarExportSource links for an export.
 
   Must be committed.
   """
@@ -421,7 +397,7 @@ async def get_board_calendar_export_ids(db: AsyncSession, board_id: uuid.UUID) -
   return list(result.scalars().all())
 
 
-async def clear_calendar_references_for_board(db: AsyncSession, board_id: uuid.UUID) -> None:
+async def clear_calendar_references_for_board(db: AsyncSession, board_id: uuid.UUID):
   """Remove all BoardCalendar links for a board.
 
   Must be committed.

@@ -1,12 +1,12 @@
 import fastapi
 
-from src.api.deps import DatabaseSession
+from src.api.deps import CalendarDownloadResponse, DatabaseSession
 from src.services import database_requests
 
 router = fastapi.APIRouter(tags=['public'])
 
 
-@router.get('/calendar/{link_name}')
+@router.get('/calendar/{link_name}', status_code=200, response_class=CalendarDownloadResponse)
 async def get_public_calendar(db: DatabaseSession, link_name: str, token: str | None = None):
   """Download calendar as ICS file.
 
@@ -22,13 +22,9 @@ async def get_public_calendar(db: DatabaseSession, link_name: str, token: str | 
     raise fastapi.HTTPException(status_code=404, detail='Calendar is unavailable or protected')
 
   if not calendar.output_ics:
-    return fastapi.HTTPException(status_code=500, detail='Calendar data is empty')
+    raise fastapi.HTTPException(status_code=500, detail='Calendar data is empty')
 
-  return fastapi.Response(
-    content=calendar.output_ics,
-    media_type='text/calendar',
-    headers={'Content-Disposition': f'inline; filename="{link_name}.ics"'},
-  )
+  return CalendarDownloadResponse(content=calendar.output_ics, filename=f'{link_name}', inline=True)
 
 
 @router.get('/api/public/boards/{board_name}')

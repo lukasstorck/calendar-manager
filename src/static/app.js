@@ -6,7 +6,7 @@
 const locale = navigator.language;
 
 const naming = {
-  DEFAULT_SOURCE_LABEL: "New Source",
+  DEFAULT_IMPORT_NAME: "New Import",
 };
 
 // -------------------------
@@ -28,8 +28,7 @@ let loginOffcanvas = null;
 
 let importsCache = [];
 let importWizardModal = null;
-let importWizardModalTargetId = null;
-let importSourceEditModal = null;
+let importDetailsModal = null;
 
 let exportsCache = [];
 let exportEditModal = null;
@@ -53,6 +52,22 @@ function cloneTemplate(id) {
 
 async function api(url, options = {}) {
   return fetch(url, { ...options, credentials: "same-origin" });
+}
+
+// Extracts a readable message from a failed response. FastAPI sends `detail` as a
+// string for HTTPExceptions and as a list of {msg, loc, ...} objects for request
+// validation errors (e.g. the import form).
+async function errorMessage(response, fallback) {
+  try {
+    const body = await response.json();
+    const detail = body.detail;
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail)) {
+      const messages = detail.map((item) => (typeof item === "string" ? item : item.msg)).filter(Boolean);
+      if (messages.length) return messages.map((m) => m.replace(/^Value error, /, "")).join("; ");
+    }
+  } catch (error) {}
+  return fallback;
 }
 
 function showToast(message, variant = "danger") {
@@ -118,6 +133,26 @@ function formatUrl(fullUrl) {
   return `${url.host}${path}`;
 }
 
+// Domain only, without scheme, path, query or fragment
+function formatDomain(fullUrl) {
+  try {
+    return new URL(fullUrl).host;
+  } catch (error) {
+    return fullUrl;
+  }
+}
+
+// Domain, plus "/..." if the URL has anything beyond it (path, query or fragment)
+function formatUrlTrimmed(fullUrl) {
+  try {
+    const url = new URL(fullUrl);
+    const hasMore = url.pathname !== "/" || url.search || url.hash;
+    return hasMore ? `${url.host}/...` : url.host;
+  } catch (error) {
+    return fullUrl;
+  }
+}
+
 function stripIcsSuffix(text) {
   return text.replace(/\.ics$/, "");
 }
@@ -126,8 +161,8 @@ function transformToName(text) {
   return text.replace(/[_-]/g, " ");
 }
 
-// Guess a name for a source label based on given URL or filename
-function guessSourceLabel({ fullUrl = null, filename = null }) {
+// Guess a name for an import based on given URL or filename
+function guessImportName({ fullUrl = null, filename = null }) {
   let guessed = null;
 
   if (filename) {
@@ -144,7 +179,7 @@ function guessSourceLabel({ fullUrl = null, filename = null }) {
     } catch (error) {}
   }
 
-  if (!guessed) return naming.DEFAULT_SOURCE_LABEL;
+  if (!guessed) return naming.DEFAULT_IMPORT_NAME;
 
   // strip calendar file extension
   guessed = guessed.replace(/\.(ics|ical|ifb|vcs)$/i, "");
@@ -153,7 +188,7 @@ function guessSourceLabel({ fullUrl = null, filename = null }) {
   // capitalize each word
   guessed = guessed.replace(/\b\w/g, (char) => char.toUpperCase());
 
-  return guessed || naming.DEFAULT_SOURCE_LABEL;
+  return guessed || naming.DEFAULT_IMPORT_NAME;
 }
 
 function generateBoardLinks(board) {
@@ -308,7 +343,7 @@ function showLoggedIn() {
 
 async function loadImports() {
   const resp = await api("/api/imports");
-  const items = await resp.json();
+  const items = resp.ok ? await resp.json() : [];
   importsCache = items;
   const list = document.getElementById("imports-list");
   document.getElementById("imports-empty").classList.toggle("d-none", items.length > 0);
@@ -317,77 +352,43 @@ async function loadImports() {
   return items;
 }
 
-function sourceIconMeta(s) {
-  const addedLine = `Added ${formatTimestamp(s.created_at)}`;
-  if (s.kind === "web") {
-    const statusLine = s.last_success ? "Last pull succeeded" : `Failed: ${s.last_error || "Unknown error"}`;
+function isWebImport(import_) {
+  return !!import_.url;
+}
+
+// A web calendar's last fetch succeeded if it was never attempted yet, or if
+// the last attempt is not newer than the last success (see CalendarImport model).
+function webImportStatus(import_) {
+  if (!import_.last_fetched_at) return "pending";
+  if (import_.last_success_at && new Date(import_.last_success_at) >= new Date(import_.last_fetched_at)) return "success";
+  return "failed";
+}
+
+function importIconMeta(import_) {
+  const addedLine = `Added ${formatTimestamp(import_.created_at)}`;
+  if (isWebImport(import_)) {
+    const status = webImportStatus(import_);
+    const statusLine = {
+      success: "Last fetch succeeded",
+      pending: "Not fetched yet",
+      failed: `Last fetch failed: ${import_.last_error || "Unknown error"}`,
+    }[status];
     return {
       icon: "fa-cloud-arrow-down",
-      colorClass: s.last_success ? "text-success" : "text-danger",
-      title: `Web calendar\n${addedLine}\n${statusLine}\nClick to view or edit`,
+      colorClass: status === "failed" ? "text-danger" : "text-success",
+      title: `Web calendar\n${addedLine}\n${statusLine}\nClick to view details`,
     };
   }
   return {
     icon: "fa-file-lines",
     colorClass: "text-success",
-    title: `Uploaded file\n${addedLine}\nClick to view or edit`,
+    title: `Uploaded file\n${addedLine}\nClick to view details`,
   };
 }
 
-function fmtRange(s) {
-  if (!s.range_start && !s.range_end) return "no events";
-  return `${pluralize(s.event_count, "event")} \u00b7 ${formatTimestamp(s.range_start)} \u2013 ${formatTimestamp(s.range_end)}`;
-}
-
-// One flat line at every width: radio, clickable type icon, label, and an
-// edit/delete button group that's just hidden below sm (rather than
-// reordered/reflowed the way it used to be). Stats sit on their own line.
-function renderSourceRow(imp, s, index) {
-  const div = cloneTemplate("template-source-row");
-  if (index % 2 === 1) div.classList.add("bg-body-tertiary");
-
-  const iconMeta = sourceIconMeta(s);
-  const icon = div.querySelector("[data-icon]");
-  icon.className = `fa-solid ${iconMeta.icon} ${iconMeta.colorClass}`;
-
-  const openEditBtn = div.querySelector("[data-open-edit]");
-  openEditBtn.title = iconMeta.title;
-  openEditBtn.addEventListener("click", () => openSourceEditModal(imp, s));
-
-  const radio = div.querySelector("[data-activate]");
-  radio.name = `active-source-${imp.id}`;
-  radio.title = s.is_active ? "Active source" : "Make active";
-  radio.checked = s.is_active;
-  radio.addEventListener("change", async () => {
-    const r = await api(`/api/imports/${imp.id}/sources/${s.id}/activate`, {
-      method: "POST",
-    });
-    if (!r.ok) {
-      showToast((await r.json()).detail || "Could not activate source");
-      radio.checked = false;
-      return;
-    }
-    await loadImports();
-  });
-
-  div.querySelector("[data-label]").textContent = s.label || "";
-
-  div.querySelector("[data-actions] [data-edit]").addEventListener("click", () => openSourceEditModal(imp, s));
-
-  const deleteBtn = div.querySelector("[data-actions] [data-delete-source]");
-  deleteBtn.title = s.is_active ? "Cannot remove the active source" : "Remove source";
-  deleteBtn.disabled = s.is_active;
-  if (!s.is_active) {
-    deleteBtn.addEventListener("click", async () => {
-      if (!confirm(`Remove source "${s.label || s.kind}"?`)) return;
-      await api(`/api/imports/${imp.id}/sources/${s.id}`, { method: "DELETE" });
-      await loadImports();
-    });
-  }
-
-  div.querySelector("[data-stats]").textContent = fmtRange(s);
-
-  return div;
+function fmtRange(stats) {
+  if (!stats.event_count || (!stats.range_start && !stats.range_end)) return "no events";
+  return `${pluralize(stats.event_count, "event")} \u00b7 ${formatTimestamp(stats.range_start)} \u2013 ${formatTimestamp(stats.range_end)}`;
 }
 
 function renderImportItem(import_) {
@@ -429,7 +430,7 @@ function renderImportItem(import_) {
       body: JSON.stringify({ name: newName }),
     });
     if (!r.ok) {
-      showToast((await r.json()).detail || "Rename failed");
+      showToast(await errorMessage(r, "Rename failed"));
       return false;
     }
     await loadImports();
@@ -462,25 +463,46 @@ function renderImportItem(import_) {
     exitEditMode(originalName);
   });
 
-  const sourcesDiv = div.querySelector("[data-sources]");
-  div.querySelector("[data-sources-empty]").classList.toggle("d-none", import_.sources.length > 0);
-  for (const [i, s] of import_.sources.entries()) sourcesDiv.appendChild(renderSourceRow(import_, s, i));
+  // type icon, URL (web calendars) and stats
+  const iconMeta = importIconMeta(import_);
+  div.querySelector("[data-icon]").className = `fa-solid ${iconMeta.icon} ${iconMeta.colorClass}`;
+  const openDetailsBtn = div.querySelector("[data-open-details]");
+  openDetailsBtn.title = iconMeta.title;
+  openDetailsBtn.addEventListener("click", () => openImportDetailsModal(import_));
+
+  const urlEl = div.querySelector("[data-url]");
+  urlEl.textContent = isWebImport(import_) ? `Web Calendar from ${formatDomain(import_.url)}` : "Uploaded file";
+
+  div.querySelector("[data-stats]").textContent = fmtRange(import_);
+
+  if (isWebImport(import_) && webImportStatus(import_) === "failed") {
+    const errorEl = div.querySelector("[data-error]");
+    errorEl.textContent = `Last fetch failed: ${import_.last_error || "Unknown error"}`;
+    errorEl.classList.remove("d-none");
+  }
+
+  div.querySelector("[data-details]").addEventListener("click", () => openImportDetailsModal(import_));
+
+  div.querySelector("[data-download]").addEventListener("click", () => {
+    downloadFile(`/api/imports/${import_.id}/download`, `${import_.name}.ics`);
+  });
 
   div.querySelector("[data-delete]").addEventListener("click", async () => {
     if (!confirm(`Delete import "${import_.name}"?`)) return;
-    await api(`/api/imports/${import_.id}`, { method: "DELETE" });
+    const r = await api(`/api/imports/${import_.id}`, { method: "DELETE" });
+    if (!r.ok) {
+      showToast(await errorMessage(r, "Could not delete import"));
+      return;
+    }
+    // exports reference imports as sources, so they changed as well
     await loadImports();
     await loadExports();
-  });
-
-  div.querySelector("[data-add-source]").addEventListener("click", () => {
-    openImportWizard(import_.id);
   });
 
   return div;
 }
 
-// ---------- source edit modal (both web and uploaded-file sources) ----------
+// ---------- import details modal (web calendars and uploaded files) ----------
 
 function renderCopyTargetItem(label, onClick) {
   const li = cloneTemplate("template-dropdown-target-item");
@@ -490,261 +512,149 @@ function renderCopyTargetItem(label, onClick) {
   return li;
 }
 
-async function openSourceEditModal(imp, source) {
-  // ----- title: label display + inline rename, same accept/cancel pattern
-  // used for the label on the old overview row -----
-  const titleDisplay = document.getElementById("source-edit-title-display");
-  const titleControls = document.getElementById("source-edit-title-controls");
-  const titleInput = document.getElementById("source-edit-title-input");
-  const titleEditBtn = document.getElementById("source-edit-title-edit");
-  const titleAcceptBtn = document.getElementById("source-edit-title-accept");
-  const titleCancelBtn = document.getElementById("source-edit-title-cancel");
+async function openImportDetailsModal(import_) {
+  const isWeb = isWebImport(import_);
 
-  titleDisplay.textContent = source.label || "";
-  titleControls.classList.add("d-none");
-  titleDisplay.classList.remove("d-none");
-  titleEditBtn.classList.remove("d-none");
+  document.getElementById("import-details-title").textContent = import_.name;
+  document.getElementById("import-details-type-label").textContent = isWeb ? "Web calendar" : "Static file";
 
-  let originalLabel = source.label || "";
-
-  titleEditBtn.onclick = () => {
-    originalLabel = source.label || "";
-    titleInput.value = originalLabel;
-    titleAcceptBtn.disabled = true;
-    titleDisplay.classList.add("d-none");
-    titleEditBtn.classList.add("d-none");
-    titleControls.classList.remove("d-none");
-    titleInput.focus();
-    titleInput.select();
-  };
-
-  function exitTitleEditMode(label) {
-    titleDisplay.textContent = label;
-    source.label = label;
-    titleControls.classList.add("d-none");
-    titleDisplay.classList.remove("d-none");
-    titleEditBtn.classList.remove("d-none");
-  }
-
-  async function saveLabel(newLabel) {
-    const response = await api(`/api/imports/${imp.id}/sources/${source.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ label: newLabel }),
-    });
-    if (!response.ok) {
-      showToast((await response.json()).detail || "Rename failed");
-      return false;
-    }
-    await loadImports();
-    return true;
-  }
-
-  titleInput.oninput = () => {
-    titleAcceptBtn.disabled = titleInput.value.trim() === originalLabel || !titleInput.value.trim();
-  };
-  titleInput.onkeydown = (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      if (!titleAcceptBtn.disabled) titleAcceptBtn.click();
-    } else if (event.key === "Escape") {
-      // keep Escape from also closing the Bootstrap modal
-      event.stopPropagation();
-      titleCancelBtn.click();
-    }
-  };
-  titleAcceptBtn.onclick = async () => {
-    const value = titleInput.value.trim();
-    if (!value || value === originalLabel) return;
-    const ok = await saveLabel(value);
-    if (ok) exitTitleEditMode(value);
-  };
-  titleCancelBtn.onclick = () => exitTitleEditMode(originalLabel);
-
-  // ----- low-key type indicator + active badge, both behind the title -----
-  document.getElementById("source-edit-type-label").textContent = source.kind === "web" ? "Web calendar" : "Static file";
-  document.getElementById("source-edit-active-badge").classList.toggle("d-none", !source.is_active);
-
-  const deleteBtn = document.getElementById("source-edit-delete-button");
-  deleteBtn.title = source.is_active ? "Cannot remove the active source" : "Remove source";
-  deleteBtn.disabled = source.is_active;
-  deleteBtn.onclick = source.is_active
-    ? null
-    : async () => {
-        if (!confirm(`Remove source "${source.label || source.kind}"?`)) return;
-        await api(`/api/imports/${imp.id}/sources/${source.id}`, { method: "DELETE" });
-        importSourceEditModal.hide();
-        await loadImports();
-      };
-
-  const webFields = document.getElementById("source-edit-web-fields");
-  const webBackupSection = document.getElementById("source-edit-web-backup-section");
-  const fileFields = document.getElementById("source-edit-file-fields");
-  const fileActions = document.getElementById("source-edit-file-actions");
-  const isWeb = source.kind === "web";
+  const webFields = document.getElementById("import-details-web-fields");
+  const backupSection = document.getElementById("import-details-backup-section");
   webFields.classList.toggle("d-none", !isWeb);
-  webBackupSection.classList.toggle("d-none", !isWeb);
-  fileFields.classList.toggle("d-none", isWeb);
-  fileActions.classList.toggle("d-none", isWeb);
-  fileActions.classList.toggle("d-flex", !isWeb);
+  backupSection.classList.toggle("d-none", !isWeb);
 
   if (isWeb) {
-    const successEl = document.getElementById("source-edit-status-success");
-    const failEl = document.getElementById("source-edit-status-fail");
-    successEl.classList.toggle("d-none", !source.last_success);
-    failEl.classList.toggle("d-none", !!source.last_success);
-    if (!source.last_success) {
-      document.getElementById("source-edit-status-fail-reason").textContent = source.last_error || "Unknown error";
+    const status = webImportStatus(import_);
+    document.getElementById("import-details-status-success").classList.toggle("d-none", status !== "success");
+    document.getElementById("import-details-status-fail").classList.toggle("d-none", status !== "failed");
+    document.getElementById("import-details-status-pending").classList.toggle("d-none", status !== "pending");
+    if (status === "failed") {
+      document.getElementById("import-details-status-fail-reason").textContent = import_.last_error || "Unknown error";
     }
 
-    document.getElementById("source-edit-last-pulled").textContent = formatTimestamp(source.last_pulled_at);
-    document.getElementById("source-edit-url").href = source.url;
-    document.getElementById("source-edit-url").textContent = formatUrl(source.url);
+    document.getElementById("import-details-last-fetched").textContent = formatTimestamp(import_.last_fetched_at) || "\u2013";
+    const urlEl = document.getElementById("import-details-url");
+    urlEl.href = import_.url;
+    urlEl.title = import_.url;
+    urlEl.textContent = formatUrlTrimmed(import_.url);
 
-    const backupChk = document.getElementById("source-edit-contribute-backup");
-    backupChk.checked = !!source.contribute_backup;
-    backupChk.onchange = async () => {
-      const r = await api(`/api/imports/${imp.id}/sources/${source.id}`, {
+    // NOTE: `backup` is only reflected if the API includes it in ImportSummaryResponse.
+    const backupCheckbox = document.getElementById("import-details-backup");
+    backupCheckbox.checked = !!import_.backup;
+    backupCheckbox.onchange = async () => {
+      const desired = backupCheckbox.checked;
+      const r = await api(`/api/imports/${import_.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contribute_backup: backupChk.checked }),
+        body: JSON.stringify({ backup: desired }),
       });
       if (!r.ok) {
-        showToast((await r.json()).detail || "Could not update backup setting");
-        backupChk.checked = !backupChk.checked;
+        showToast(await errorMessage(r, "Could not update backup setting"));
+        backupCheckbox.checked = !desired;
         return;
       }
+      import_.backup = desired;
       await loadImports();
     };
-
-    const listDiv = document.getElementById("source-edit-snapshots-list");
-    const loadingEl = document.getElementById("source-edit-snapshots-loading");
-    const emptyEl = document.getElementById("source-edit-snapshots-empty");
-    listDiv.innerHTML = "";
-    emptyEl.classList.add("d-none");
-    loadingEl.classList.remove("d-none");
-
-    const [snapshots, allImports] = await Promise.all([
-      api(`/api/imports/${imp.id}/sources/${source.id}/snapshots`).then((r) => r.json()),
-      Promise.resolve(importsCache),
-    ]);
-
-    loadingEl.classList.add("d-none");
-    emptyEl.classList.toggle("d-none", snapshots.length > 0);
-
-    snapshots.forEach((snap, i) => {
-      const row = cloneTemplate("template-snapshot-row");
-      const range = snap.range_start || snap.range_end ? `${formatTimestamp(snap.range_start)} \u2013 ${formatTimestamp(snap.range_end)}` : "no events";
-      row.querySelector("[data-fetched-at]").textContent = formatTimestamp(snap.fetched_at);
-      row.querySelector("[data-latest-badge]").classList.toggle("d-none", i !== 0);
-      row.querySelector("[data-stats]").textContent = `${pluralize(snap.event_count, "event")} \u00b7 ${range}`;
-
-      row.querySelector("[data-download-button]").addEventListener("click", () => {
-        downloadFile(`/api/imports/${imp.id}/sources/${source.id}/snapshots/${snap.id}/download`, `${source.label || "calendar"}-${snap.fetched_at}.ics`);
-      });
-
-      const menu = row.querySelector("[data-target-list]");
-      for (const target of allImports) {
-        menu.appendChild(
-          renderCopyTargetItem(target.name, async () => {
-            const label = `${source.label} Snapshot from ${formatTimestamp(snap.fetched_at)}`;
-            const r = await api(`/api/imports/${target.id}/snapshot`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ snapshot_id: snap.id, label }),
-            });
-            if (!r.ok) {
-              showToast((await r.json()).detail || "Could not save snapshot");
-              return;
-            }
-            showToast(`Saved as a new file source on "${target.name}"`, "success");
-            await loadImports();
-          }),
-        );
-      }
-      listDiv.appendChild(row);
-    });
-  } else {
-    document.getElementById("source-edit-file-added").textContent = formatTimestamp(source.created_at);
-    document.getElementById("source-edit-file-stats").textContent = fmtRange(source);
-
-    const downloadBtn = document.getElementById("source-edit-file-download");
-    downloadBtn.onclick = (event) => {
-      event.preventDefault();
-      downloadFile(`/api/imports/${imp.id}/sources/${source.id}/download`, `${source.label || "calendar"}.ics`);
-    };
-
-    const copyMenu = document.getElementById("source-edit-file-copy-targets");
-    copyMenu.innerHTML = "";
-    for (const target of importsCache) {
-      copyMenu.appendChild(
-        renderCopyTargetItem(target.name, async () => {
-          const r = await api(`/api/imports/${target.id}/sources/${source.id}/copy`, {
-            method: "POST",
-          });
-          if (!r.ok) {
-            showToast((await r.json()).detail || "Could not copy source");
-            return;
-          }
-          showToast(`Copied to "${target.name}"`, "success");
-          await loadImports();
-        }),
-      );
-    }
   }
 
-  importSourceEditModal.show();
+  document.getElementById("import-details-created").textContent = formatTimestamp(import_.created_at) || "\u2013";
+  document.getElementById("import-details-stats").textContent = fmtRange(import_);
+
+  document.getElementById("import-details-download-button").onclick = () => {
+    downloadFile(`/api/imports/${import_.id}/download`, `${import_.name}.ics`);
+  };
+
+  importDetailsModal.show();
+  await renderFileReferences(import_);
 }
 
-function openImportWizard(importId) {
-  importWizardModalTargetId = importId;
-  importWizardModal.show();
+async function renderFileReferences(import_) {
+  const listDiv = document.getElementById("import-details-versions-list");
+  const loadingEl = document.getElementById("import-details-versions-loading");
+  const emptyEl = document.getElementById("import-details-versions-empty");
+  listDiv.innerHTML = "";
+  emptyEl.classList.add("d-none");
+  loadingEl.classList.remove("d-none");
+
+  const resp = await api(`/api/imports/${import_.id}/file-references`);
+  loadingEl.classList.add("d-none");
+  if (!resp.ok) {
+    showToast(await errorMessage(resp, "Could not load stored versions"));
+    return;
+  }
+  // newest first, as sent by the server
+  const fileReferences = await resp.json();
+  emptyEl.classList.toggle("d-none", fileReferences.length > 0);
+
+  fileReferences.forEach((fileReference, i) => {
+    const row = cloneTemplate("template-file-reference-row");
+    row.querySelector("[data-created-at]").textContent = formatTimestamp(fileReference.created_at);
+    row.querySelector("[data-latest-badge]").classList.toggle("d-none", i !== 0 || fileReferences.length === 1);
+    row.querySelector("[data-stats]").textContent = fmtRange(fileReference);
+
+    row.querySelector("[data-download-button]").addEventListener("click", () => {
+      downloadFile(`/api/imports/${import_.id}/file-references/${fileReference.id}/download`, `${import_.name}-${fileReference.created_at}.ics`);
+    });
+
+    row.querySelector("[data-copy-button]").addEventListener("click", async () => {
+      const r = await api(`/api/imports/${import_.id}/file-references/${fileReference.id}/copy`, { method: "POST" });
+      if (!r.ok) {
+        showToast(await errorMessage(r, "Could not create import from this version"));
+        return;
+      }
+      const created = await r.json();
+      showToast(`Created import "${created.name}"`, "success");
+      await loadImports();
+    });
+
+    listDiv.appendChild(row);
+  });
 }
 
 // -------------------------------
 // region: imports event listeners
 // -------------------------------
 
-document.getElementById("new-import-button").addEventListener("click", async () => {
-  // No name-picking step -- create with an auto-generated placeholder name
-  // and go straight into the add-source wizard, matching export/board.
-  const resp = await api("/api/imports", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
-  });
-  if (!resp.ok) {
-    showToast((await resp.json()).detail || "Could not create import");
-    return;
-  }
-  const newImport = await resp.json();
-  await loadImports();
-  openImportWizard(newImport.id);
+document.getElementById("new-import-button").addEventListener("click", () => {
+  importWizardModal.show();
 });
 
 document.getElementById("import-wizard-modal").addEventListener("show.bs.modal", () => {
   document.getElementById("wizard-url").value = "";
   document.getElementById("wizard-file").value = "";
-  document.getElementById("wizard-label").value = "";
-  document.getElementById("wizard-label").placeholder = naming.DEFAULT_SOURCE_LABEL;
+  const nameInput = document.getElementById("wizard-name");
+  nameInput.value = "";
+  nameInput.placeholder = naming.DEFAULT_IMPORT_NAME;
+  nameInput.classList.remove("is-invalid");
+  document.getElementById("wizard-error").textContent = "";
+  setWizardBusy(false);
   bootstrap.Tab.getOrCreateInstance(document.getElementById("import-tab-url-button")).show();
 });
 
+function setWizardBusy(busy) {
+  document.getElementById("wizard-ok-button").disabled = busy;
+  document.getElementById("wizard-spinner").classList.toggle("d-none", !busy);
+  document.getElementById("wizard-ok-icon").classList.toggle("d-none", busy);
+}
+
 document.getElementById("wizard-url").addEventListener("input", (event) => {
-  const labelInput = document.getElementById("wizard-label");
-  labelInput.placeholder = labelInput.value || guessSourceLabel({ fullUrl: event.target.value.trim() });
+  const nameInput = document.getElementById("wizard-name");
+  nameInput.placeholder = guessImportName({ fullUrl: event.target.value.trim() });
 });
 
 document.getElementById("wizard-file").addEventListener("change", (event) => {
   const file = event.target.files[0];
-  const labelInput = document.getElementById("wizard-label");
-  labelInput.placeholder = labelInput.value || guessSourceLabel({ filename: file?.name });
+  const nameInput = document.getElementById("wizard-name");
+  nameInput.placeholder = guessImportName({ filename: file?.name });
 });
 
 document.getElementById("wizard-ok-button").addEventListener("click", async () => {
   const kind = document.getElementById("import-tab-file").classList.contains("active") ? "file" : "url";
-  const importId = importWizardModalTargetId;
-  const labelInput = document.getElementById("wizard-label");
+  const nameInput = document.getElementById("wizard-name");
+
+  // The backend expects multipart form data with a name and exactly one of url / file
+  const formData = new FormData();
 
   if (kind === "url") {
     const url = document.getElementById("wizard-url").value.trim();
@@ -752,44 +662,43 @@ document.getElementById("wizard-ok-button").addEventListener("click", async () =
       showToast("Enter a calendar URL");
       return;
     }
-    const label = labelInput.value.trim() || guessSourceLabel({ fullUrl: url });
-    const resp = await api(`/api/imports/${importId}/urls`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, label }),
-    });
-    if (!resp.ok) {
-      showToast((await resp.json()).detail || "Could not add calendar URL");
-      importWizardModalTargetId = null;
-      importWizardModal.hide();
-      await loadImports();
-      return;
-    }
+    formData.append("url", url);
+    formData.append("name", nameInput.value.trim() || guessImportName({ fullUrl: url }));
   } else {
-    const fileInput = document.getElementById("wizard-file");
-    const file = fileInput.files[0];
+    const file = document.getElementById("wizard-file").files[0];
     if (!file) {
       showToast("Choose a file");
       return;
     }
-    const label = labelInput.value.trim() || guessSourceLabel({ filename: file.name });
-    const fd = new FormData();
-    fd.append("file", file);
-    fd.append("label", label);
-    const resp = await api(`/api/imports/${importId}/files`, {
-      method: "POST",
-      body: fd,
-    });
-    if (!resp.ok) {
-      showToast((await resp.json()).detail || "Could not add file");
-      importWizardModalTargetId = null;
-      importWizardModal.hide();
-      await loadImports();
-      return;
-    }
+    formData.append("file", file);
+    formData.append("name", nameInput.value.trim() || guessImportName({ filename: file.name }));
   }
 
-  importWizardModalTargetId = null;
+  // The server fetches web calendars while handling this request, which may take a moment.
+  // Keep the modal open on failure so that the input is not lost.
+  setWizardBusy(true);
+  let resp;
+  try {
+    resp = await api("/api/imports", { method: "POST", body: formData });
+  } catch (error) {
+    showToast("Could not reach the server");
+    setWizardBusy(false);
+    return;
+  }
+
+  if (!resp.ok) {
+    const message = await errorMessage(resp, "Could not create import");
+    document.getElementById("wizard-error").textContent = message;
+    // show the message below the name field, but only highlight the field if it is about the name
+    nameInput.classList.toggle("is-invalid", message.toLowerCase().includes("name"));
+    if (!message.toLowerCase().includes("name")) {
+      document.getElementById("wizard-error").textContent = "";
+      showToast(message);
+    }
+    setWizardBusy(false);
+    return;
+  }
+
   importWizardModal.hide();
   await loadImports();
 });
@@ -1001,6 +910,9 @@ function updateModalLinkDisplay(export_) {
 // (further down the list) overwrite earlier ones.
 let exportEditModalSources = [];
 let exportEditModalSourceLocalIdCounter = 0;
+// localId -> { filter_error, transform_error } from the last failed save
+let exportEditModalSourceErrors = {};
+let exportEditModalScheduleSave = () => {};
 
 function nextSourceLocalId() {
   exportEditModalSourceLocalIdCounter += 1;
@@ -1031,6 +943,7 @@ function renderExportSourceBlocks(scheduleSave) {
     filterInput.value = source.filter || "";
     filterInput.oninput = () => {
       source.filter = filterInput.value;
+      filterInput.classList.remove("is-invalid");
       scheduleSave();
     };
 
@@ -1039,8 +952,20 @@ function renderExportSourceBlocks(scheduleSave) {
     transformInput.value = source.transform || "";
     transformInput.oninput = () => {
       source.transform = transformInput.value;
+      transformInput.classList.remove("is-invalid");
       scheduleSave();
     };
+
+    // validation errors of the last failed save (keyed by import id, set in performExportSave)
+    const sourceError = exportEditModalSourceErrors[source.localId];
+    if (sourceError?.filter_error) {
+      filterInput.classList.add("is-invalid");
+      block.querySelector("[data-source-filter-error]").textContent = sourceError.filter_error;
+    }
+    if (sourceError?.transform_error) {
+      transformInput.classList.add("is-invalid");
+      block.querySelector("[data-source-transform-error]").textContent = sourceError.transform_error;
+    }
 
     block.querySelector("[data-remove-source]").addEventListener("click", () => {
       exportEditModalSources = exportEditModalSources.filter((s) => s.localId !== source.localId);
@@ -1092,6 +1017,7 @@ async function openExportModal(exportId) {
   // config. Until the backend implements this, `sources` will simply be
   // absent/empty and the modal opens with the empty-box placeholder.
   exportEditModalSourceLocalIdCounter = 0;
+  exportEditModalSourceErrors = {};
   exportEditModalSources = (exportData.sources || []).map((source) => ({
     localId: nextSourceLocalId(),
     import_id: source.import_id,
@@ -1106,6 +1032,7 @@ async function openExportModal(exportId) {
     exportEditModalSaveTimer = setTimeout(() => saveExport(exportId), 900);
   }
 
+  exportEditModalScheduleSave = scheduleSave;
   renderExportSourceBlocks(scheduleSave);
   renderAddSourceMenu((importId) => {
     exportEditModalSources.push({ localId: nextSourceLocalId(), import_id: importId, filter: "", transform: "" });
@@ -1183,6 +1110,26 @@ async function performExportSave(exportId) {
   if (!resp.ok) {
     const err = await resp.json();
     statusEl.textContent = "Not saved";
+
+    // Source validation errors arrive as a list of JSON strings, each one
+    // { import_id, filter_error, transform_error }. Match them back to the
+    // source blocks by import id (in order, as the same import may be used twice).
+    if (resp.status === 422 && Array.isArray(err.detail) && err.detail.every((item) => typeof item === "string")) {
+      const parsedErrors = err.detail.map((item) => JSON.parse(item));
+      exportEditModalSourceErrors = {};
+      const used = new Set();
+      for (const parsed of parsedErrors) {
+        const source = exportEditModalSources.find((s) => s.import_id === parsed.import_id && !used.has(s.localId));
+        if (source) {
+          used.add(source.localId);
+          exportEditModalSourceErrors[source.localId] = parsed;
+        }
+      }
+      renderExportSourceBlocks(exportEditModalScheduleSave);
+      exportEditModalDirty = true;
+      return false;
+    }
+
     const detailLower = String(err.detail || "").toLowerCase();
 
     // guess which field the error is about, same approach as the board modal
@@ -1202,6 +1149,10 @@ async function performExportSave(exportId) {
   nameErrEl.textContent = "";
   pubErrEl.textContent = "";
   pubInput.classList.remove("is-invalid");
+  if (Object.keys(exportEditModalSourceErrors).length) {
+    exportEditModalSourceErrors = {};
+    renderExportSourceBlocks(exportEditModalScheduleSave);
+  }
   const updated = await resp.json();
   updateModalLinkDisplay(updated);
   statusEl.textContent = "All changes saved";
@@ -1514,7 +1465,7 @@ async function boot() {
   loginOffcanvas = loginOffcanvas || bootstrap.Offcanvas.getOrCreateInstance(document.getElementById("login-offcanvas"));
   exportEditModal = exportEditModal || bootstrap.Modal.getOrCreateInstance(document.getElementById("export-modal"));
   importWizardModal = importWizardModal || bootstrap.Modal.getOrCreateInstance(document.getElementById("import-wizard-modal"));
-  importSourceEditModal = importSourceEditModal || bootstrap.Modal.getOrCreateInstance(document.getElementById("source-edit-modal"));
+  importDetailsModal = importDetailsModal || bootstrap.Modal.getOrCreateInstance(document.getElementById("import-details-modal"));
   boardEditModal = boardEditModal || bootstrap.Modal.getOrCreateInstance(document.getElementById("board-modal"));
   setupSourcesInfoPopover();
 
