@@ -175,6 +175,7 @@ shift:PT1H set-location:"Room 1" remove:description remove:extra-properties
 
 ### BACKLOG
 
+- add frequent changes as a reason for fetch backoff (e.g. when two consecutive fetches succeed and are new versions, backoff for 30 min, then 1 hour), to avoid saving unnecessary changes while someone is working on the calendars
 - add non 200 http codes into pydantic documentation
 - bug: web calendar details are not updated when opened after a new version was fetched while the stored versions show the updated information
 
