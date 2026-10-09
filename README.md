@@ -1,11 +1,23 @@
 # Calendar Manager
 
-A web service for managing calendar sources, combining and filtering calendar events and providing subscribable web calendars.
+Take control of your calendars: import them from anywhere, back them up, filter and transform their events, and share the results via a single link.
+Open source and self-hosted, so your calendars stay on your own server.
+
+## Features
+
+- **Calendar imports** from uploaded `.ics` files or subscribed web calendars, with automatic backup of every changed version
+- **Calendar exports** that combine one or more imports, with a filter and a transform per source, shared via a custom and optionally token-protected link
+- **Filters via SQL**: select events with a plain `WHERE` clause
+- **Transforms via commands**: shift, clip, overwrite or remove event properties, trim overlaps and more
+- **Calendar boards** to share multiple calendars with others via a single link
+- **Self-hosting** with an easy Docker Compose setup
+- **Authentication** via configurable OpenID Connect providers
 
 <img src="media/demo_imports.png" alt="Calendar Manager demo: imported calendars from web calendars or static files" />
 
 First create calendar imports either from static file uploads or by subscribing to web calendars via their URL.
-The web calendar subscription can be used standalone to provide a passive backup.
+Web calendars are refreshed regularly in the background.
+With the backup feature enabled, every changed version is stored, so a subscription can also be used standalone as a passive backup.
 Calendar imports are the source of events for calendar exports.
 
 <img src="media/demo_exports.png" alt="Calendar Manager demo: calendar exports are filters applied to one or multiple imported calendars" />
@@ -28,6 +40,9 @@ git clone https://github.com/lukasstorck/calendar-manager.git
 cd calendar-manager
 
 cp .env.example .env
+# disable oidc auth for demo
+sed -i 's/^SKIP_AUTHENTICATION=.*/SKIP_AUTHENTICATION=true/' .env
+
 docker compose up --build
 ```
 
@@ -41,8 +56,9 @@ Common web calendars can be
 - volatile, e.g. old events might get deleted from the source
 - untrusted, e.g. source might get edited/manipulated
 and providers usually do not provide backup solutions.
-Simply having a calendar import with the backup feature activated will save all changes to the calendar as snapshots.
-It can also be used to observe changes made to the source.
+Simply having a calendar import with the backup feature activated will store every changed version of the calendar.
+Older versions are thinned out over time, so the history stays small.
+Each stored version can be downloaded or turned into a new import, which can also be used to observe changes made to the source.
 
 #### Create partial calendars
 
@@ -160,7 +176,7 @@ shift:PT1H set-location:"Room 1" remove:description remove:extra-properties
 ### BACKLOG
 
 - add non 200 http codes into pydantic documentation
-- bug: web calendar details are not updated when opened after a new version was fetched whilie the stored version show the updated information
+- bug: web calendar details are not updated when opened after a new version was fetched while the stored versions show the updated information
 
 - allow multi-line in descriptions
 

@@ -15,6 +15,40 @@
         overflow-y: auto;
       }
 
+      /* ---- landing page ---- */
+      #info-page .landing-icon {
+        width: 3rem;
+        height: 3rem;
+        flex-shrink: 0;
+        font-size: 1.25rem;
+      }
+      #info-page .landing-card {
+        transition:
+          transform 0.15s ease,
+          border-color 0.15s ease;
+      }
+      #info-page .landing-card:hover {
+        transform: translateY(-2px);
+        border-color: var(--bs-primary-border-subtle);
+      }
+      #info-page pre {
+        font-size: 0.8rem;
+        margin: 0;
+        white-space: pre;
+        overflow-x: auto;
+      }
+      #info-page .landing-step-arrow {
+        color: var(--bs-secondary-color);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #info-page .landing-card {
+          transition: none;
+        }
+        #info-page .landing-card:hover {
+          transform: none;
+        }
+      }
+
       /* Limit the width of the bootstrap dropdown menu, truncate long strings */
       .dropdown-menu {
         max-width: 320px;
@@ -29,65 +63,360 @@
       </div>
     </div>
 
-    <!-- Logged out: info page, no title bar -->
+    <!-- Logged out: landing page -->
     <div id="info-page" class="d-none">
-      <div class="d-flex justify-content-end m-3">
-        <button class="btn btn-primary" data-bs-toggle="offcanvas" data-bs-target="#login-offcanvas">
-          <i class="fa-solid fa-right-to-bracket me-1"></i>Login
-        </button>
-      </div>
+      <nav class="navbar border-bottom sticky-top bg-body bg-opacity-75" style="backdrop-filter: blur(8px)">
+        <div class="container">
+          <span class="navbar-brand mb-0 h1 fw-bold"><i class="fa-solid fa-calendar-days me-2 text-primary"></i>Calendar Manager</span>
+          <div class="d-flex align-items-center gap-2">
+            <a class="btn btn-sm btn-outline-secondary" href="https://github.com/lukasstorck/calendar-manager" target="_blank" rel="noopener"
+              ><i class="fa-brands fa-github me-1"></i><span class="d-none d-sm-inline">GitHub</span></a
+            >
+            <button class="btn btn-sm btn-primary" data-bs-toggle="offcanvas" data-bs-target="#login-offcanvas">
+              <i class="fa-solid fa-right-to-bracket me-1"></i>Login
+            </button>
+          </div>
+        </div>
+      </nav>
 
-      <main class="container d-flex align-items-center justify-content-center">
-        <div class="text-center" style="max-width: 640px">
-          <h1 class="mb-3"><i class="fa-solid fa-calendar-days me-2"></i>Calendar Manager</h1>
-          <p class="text-body-secondary mb-4">Bring your calendars together, make automated adjustements, and share them with others.</p>
+      <main>
+        <!-- Hero -->
+        <section class="landing-hero py-5">
+          <div class="container text-center py-4 py-md-5" style="max-width: 760px">
+            <span class="badge rounded-pill text-bg-secondary mb-3"><i class="fa-solid fa-code-branch me-1"></i>Open source &middot; self-hosted</span>
+            <h1 class="display-4 fw-bold mb-3">Take control of<br />your calendars</h1>
+            <p class="lead text-body-secondary mb-4">
+              Bring calendars from anywhere together, back them up, filter and reshape their events, and share exactly what you want &mdash; with a single link.
+            </p>
+            <div class="d-flex flex-wrap justify-content-center gap-2">
+              <button class="btn btn-primary btn-lg" data-bs-toggle="offcanvas" data-bs-target="#login-offcanvas">
+                Get started<i class="fa-solid fa-arrow-right ms-2"></i>
+              </button>
+              <a class="btn btn-outline-secondary btn-lg" href="#landing-self-hosting"><i class="fa-solid fa-server me-2"></i>Host it yourself</a>
+            </div>
+          </div>
+        </section>
 
-          <div class="row g-3 text-start mb-4">
-            <div class="col-12 col-md-4 d-flex">
-              <div class="card h-100 w-100">
+        <!-- How it works -->
+        <section class="container pb-5" id="landing-how-it-works">
+          <div class="row g-3 align-items-stretch justify-content-center">
+            <div class="col-12 col-md">
+              <div class="card landing-card h-100">
                 <div class="card-body">
-                  <div class="d-inline display-4 text-secondary">1.</div>
-                  <h3 class="d-inline d-md-block fw-bold">Imports</h3>
-                  <p class="mb-0">Subscribe to web calendars or upload static <code>.ics</code> files</p>
-                  <ul class="mb-0 ps-3">
-                    <li>automated backups</li>
-                  </ul>
+                  <div class="d-flex align-items-center gap-3 mb-2">
+                    <span class="landing-icon rounded-3 bg-primary-subtle text-primary-emphasis d-inline-flex align-items-center justify-content-center">
+                      <i class="fa-solid fa-cloud-arrow-down"></i>
+                    </span>
+                    <div>
+                      <div class="small text-body-secondary text-uppercase">Step 1</div>
+                      <h2 class="h5 fw-bold mb-0">Import</h2>
+                    </div>
+                  </div>
+                  <p class="mb-0 text-body-secondary">
+                    Upload <code>.ics</code> files or subscribe to web calendars. Subscriptions stay up to date and can be backed up automatically.
+                  </p>
                 </div>
               </div>
             </div>
-
-            <div class="col-12 col-md-4 d-flex">
-              <div class="card h-100 w-100">
+            <div class="col-md-auto d-none d-md-flex align-items-center landing-step-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+            <div class="col-12 col-md">
+              <div class="card landing-card h-100">
                 <div class="card-body">
-                  <div class="d-inline display-4 text-secondary">2.</div>
-                  <h3 class="d-inline d-md-block fw-bold">Exports</h3>
-                  <p class="mb-0">Combine imports, apply filter rules, and publish results</p>
-                  <ul class="mb-0 ps-3">
-                    <li>public custom link name</li>
-                    <li>optional token protection</li>
-                  </ul>
+                  <div class="d-flex align-items-center gap-3 mb-2">
+                    <span class="landing-icon rounded-3 bg-success-subtle text-success-emphasis d-inline-flex align-items-center justify-content-center">
+                      <i class="fa-solid fa-filter"></i>
+                    </span>
+                    <div>
+                      <div class="small text-body-secondary text-uppercase">Step 2</div>
+                      <h2 class="h5 fw-bold mb-0">Export</h2>
+                    </div>
+                  </div>
+                  <p class="mb-0 text-body-secondary">
+                    Combine imports, filter events and transform them into new calendars, each with its own subscription link.
+                  </p>
                 </div>
               </div>
             </div>
-
-            <div class="col-12 col-md-4 d-flex">
-              <div class="card h-100 w-100">
+            <div class="col-md-auto d-none d-md-flex align-items-center landing-step-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+            <div class="col-12 col-md">
+              <div class="card landing-card h-100">
                 <div class="card-body">
-                  <div class="d-inline display-4 text-secondary">3.</div>
-                  <h3 class="d-inline d-md-block fw-bold">Boards</h3>
-                  <p class="mb-0">Group published exports and share them with a single link</p>
-                  <ul class="mb-0 ps-3">
-                    <li>public custom link name</li>
-                    <li>optional token protection</li>
-                  </ul>
+                  <div class="d-flex align-items-center gap-3 mb-2">
+                    <span class="landing-icon rounded-3 bg-info-subtle text-info-emphasis d-inline-flex align-items-center justify-content-center">
+                      <i class="fa-solid fa-table-cells-large"></i>
+                    </span>
+                    <div>
+                      <div class="small text-body-secondary text-uppercase">Step 3</div>
+                      <h2 class="h5 fw-bold mb-0">Share</h2>
+                    </div>
+                  </div>
+                  <p class="mb-0 text-body-secondary">
+                    Group exports on a board and hand people one link, so they can pick and subscribe to the calendars that fit them.
+                  </p>
                 </div>
               </div>
             </div>
           </div>
+        </section>
 
-          <button class="btn btn-primary" data-bs-toggle="offcanvas" data-bs-target="#login-offcanvas">Get started</button>
-        </div>
+        <!-- Imports -->
+        <section class="border-top py-5">
+          <div class="container">
+            <div class="row g-4 align-items-center">
+              <div class="col-lg-6">
+                <h2 class="fw-bold mb-3"><i class="fa-solid fa-cloud-arrow-down text-primary me-2"></i>Imports with built-in backup</h2>
+                <p class="text-body-secondary">
+                  Everything starts with an import &mdash; a calendar from a file or a link. Calendar providers rarely offer backups and old events can vanish
+                  or be altered at the source. Here you keep your own history.
+                </p>
+                <ul class="list-unstyled mb-0">
+                  <li class="mb-2">
+                    <i class="fa-solid fa-file-arrow-up text-success me-2"></i><strong>Uploaded files</strong> &mdash; import a static <code>.ics</code> file
+                    once.
+                  </li>
+                  <li class="mb-2">
+                    <i class="fa-solid fa-rotate text-success me-2"></i><strong>Web calendars</strong> &mdash; subscribe by URL, refreshed automatically in the
+                    background.
+                  </li>
+                  <li class="mb-2">
+                    <i class="fa-solid fa-clock-rotate-left text-success me-2"></i><strong>Automatic backup</strong> &mdash; every changed version is stored,
+                    thinned out over time. Download any version or turn it into a new import.
+                  </li>
+                  <li>
+                    <i class="fa-solid fa-heart-pulse text-success me-2"></i><strong>Status at a glance</strong> &mdash; see when a calendar was last fetched
+                    and why a fetch failed.
+                  </li>
+                </ul>
+              </div>
+              <div class="col-lg-6">
+                <div class="card">
+                  <div class="card-body">
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                      <i class="fa-solid fa-cloud-arrow-down text-success"></i>
+                      <strong>Team Schedule</strong>
+                      <span class="badge text-bg-secondary ms-auto">Backup on</span>
+                    </div>
+                    <div class="small text-body-secondary mb-3">Web Calendar from calendar.example.com</div>
+                    <div class="d-flex align-items-center gap-2 py-2 border-top small">
+                      <span>Today, 08:15</span><span class="badge text-bg-secondary">Latest</span>
+                      <span class="text-body-secondary ms-auto">212 events</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 py-2 border-top small">
+                      <span>Yesterday, 17:40</span><span class="text-body-secondary ms-auto">209 events</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 py-2 border-top small">
+                      <span>Last week, Tue 09:02</span><span class="text-body-secondary ms-auto">204 events</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Exports -->
+        <section class="border-top py-5 bg-body-tertiary">
+          <div class="container">
+            <div class="row g-4 align-items-center">
+              <div class="col-lg-6 order-lg-2">
+                <h2 class="fw-bold mb-3"><i class="fa-solid fa-share-nodes text-primary me-2"></i>Exports you can subscribe to</h2>
+                <p class="text-body-secondary">
+                  An export collects events from one or more imports, applies your rules and publishes the result as a regular calendar feed that works in any
+                  calendar app.
+                </p>
+                <ul class="list-unstyled mb-0">
+                  <li class="mb-2">
+                    <i class="fa-solid fa-layer-group text-success me-2"></i><strong>Combine</strong> several imports, each with its own filter and transform.
+                  </li>
+                  <li class="mb-2">
+                    <i class="fa-solid fa-link text-success me-2"></i><strong>Memorable links</strong> &mdash; choose your own short, static link name.
+                  </li>
+                  <li class="mb-2">
+                    <i class="fa-solid fa-lock text-success me-2"></i><strong>Protected links</strong> &mdash; require a secret token and reroll it at any time
+                    to cut off access.
+                  </li>
+                  <li>
+                    <i class="fa-solid fa-bolt text-success me-2"></i><strong>Always current</strong> &mdash; exports are rebuilt automatically when a source or
+                    a rule changes.
+                  </li>
+                </ul>
+              </div>
+              <div class="col-lg-6 order-lg-1">
+                <div class="card">
+                  <div class="card-body">
+                    <div class="small text-body-secondary mb-1">Subscription link</div>
+                    <pre class="rounded border bg-body p-3 mb-3"><code>https://calendars.example.com/calendar/u12-training</code></pre>
+                    <div class="small text-body-secondary mb-1">Protected with a secret token</div>
+                    <pre class="rounded border bg-body p-3 mb-0"><code>https://calendars.example.com/calendar/u12-training
+    ?token=k3Zq&hellip;</code></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Filters & transforms -->
+        <section class="border-top py-5">
+          <div class="container">
+            <div class="text-center mx-auto mb-4" style="max-width: 640px">
+              <h2 class="fw-bold mb-2"><i class="fa-solid fa-wand-magic-sparkles text-primary me-2"></i>Shape events your way</h2>
+              <p class="text-body-secondary mb-0">
+                Each source of an export has a filter that selects events and a transform that modifies the ones that are kept.
+              </p>
+            </div>
+            <div class="row g-3">
+              <div class="col-lg-6 d-flex">
+                <div class="card landing-card w-100">
+                  <div class="card-body">
+                    <h3 class="h5 fw-bold"><i class="fa-solid fa-database text-success me-2"></i>Filters are SQL</h3>
+                    <p class="text-body-secondary">
+                      Write a plain <code>WHERE</code> clause against fields like <code>summary</code>, <code>location</code>, <code>dtstart</code> or
+                      <code>status</code>. Text matching, regular expressions, date ranges and durations are all supported.
+                    </p>
+                    <pre class="rounded border bg-body p-3"><code>summary REGEXP '^(Training|Match)'
+  AND status != 'CANCELLED'
+  AND "all-day" = 0
+  AND datetime(dtstart) &gt;= datetime('2026-01-01')</code></pre>
+                  </div>
+                </div>
+              </div>
+              <div class="col-lg-6 d-flex">
+                <div class="card landing-card w-100">
+                  <div class="card-body">
+                    <h3 class="h5 fw-bold"><i class="fa-solid fa-sliders text-success me-2"></i>Transforms are short commands</h3>
+                    <p class="text-body-secondary">
+                      Chain commands to shift times, clip durations, overwrite or remove properties, trim overlaps and merge consecutive all-day events.
+                    </p>
+                    <pre class="rounded border bg-body p-3"><code>shift:PT1H
+clip-max-duration:PT2H
+set-location:"Room 1"
+remove:description
+combine-all-day</code></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="row g-3 mt-1 text-center">
+              <div class="col-12 col-md-4"><i class="fa-solid fa-scissors text-body-secondary me-2"></i>Create smaller calendars without old events</div>
+              <div class="col-12 col-md-4"><i class="fa-solid fa-users text-body-secondary me-2"></i>Split one calendar into one per group or team</div>
+              <div class="col-12 col-md-4"><i class="fa-solid fa-eye-slash text-body-secondary me-2"></i>Strip private details before sharing</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Boards -->
+        <section class="border-top py-5 bg-body-tertiary">
+          <div class="container">
+            <div class="row g-4 align-items-center">
+              <div class="col-lg-6">
+                <h2 class="fw-bold mb-3"><i class="fa-solid fa-table-cells-large text-primary me-2"></i>Boards: one link for many calendars</h2>
+                <p class="text-body-secondary">
+                  A board is a public page that lists a selection of your exports with a name and description. People open it, choose the calendar that fits
+                  them and subscribe &mdash; no account needed.
+                </p>
+                <ul class="list-unstyled mb-0">
+                  <li class="mb-2"><i class="fa-solid fa-check text-success me-2"></i>Pick which exports appear on the board</li>
+                  <li class="mb-2"><i class="fa-solid fa-check text-success me-2"></i>Custom link name, optional token protection</li>
+                  <li><i class="fa-solid fa-check text-success me-2"></i>Perfect for clubs, teams, classes and communities</li>
+                </ul>
+              </div>
+              <div class="col-lg-6">
+                <div class="card">
+                  <div class="card-body">
+                    <h3 class="h5 fw-bold mb-1">Sports Club</h3>
+                    <div class="small text-body-secondary mb-3">Pick your calendar and subscribe.</div>
+                    <div class="d-flex align-items-center gap-2 py-2 border-top">
+                      <div class="flex-grow-1">
+                        <strong>U12 Training</strong>
+                        <div class="small text-body-secondary">Tue &amp; Thu sessions</div>
+                      </div>
+                      <span class="btn btn-sm btn-outline-secondary disabled"><i class="fa-solid fa-copy"></i></span>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 py-2 border-top">
+                      <div class="flex-grow-1">
+                        <strong>Competitions</strong>
+                        <div class="small text-body-secondary">Weekend matches for parents</div>
+                      </div>
+                      <span class="btn btn-sm btn-outline-secondary disabled"><i class="fa-solid fa-copy"></i></span>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 py-2 border-top">
+                      <div class="flex-grow-1">
+                        <strong>Club Events</strong>
+                        <div class="small text-body-secondary">For supporters</div>
+                      </div>
+                      <span class="btn btn-sm btn-outline-secondary disabled"><i class="fa-solid fa-copy"></i></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Self hosting & auth -->
+        <section class="border-top py-5" id="landing-self-hosting">
+          <div class="container">
+            <div class="text-center mx-auto mb-4" style="max-width: 640px">
+              <h2 class="fw-bold mb-2"><i class="fa-solid fa-server text-primary me-2"></i>Yours to run</h2>
+              <p class="text-body-secondary mb-0">Calendar Manager is open source. Your calendars and your data stay on your own server.</p>
+            </div>
+            <div class="row g-3">
+              <div class="col-lg-6 d-flex">
+                <div class="card landing-card w-100">
+                  <div class="card-body">
+                    <h3 class="h5 fw-bold"><i class="fa-brands fa-docker text-success me-2"></i>Up in minutes with Docker Compose</h3>
+                    <p class="text-body-secondary">One compose file starts the app and its PostgreSQL database.</p>
+                    <pre class="rounded border bg-body p-3 mb-0"><code>git clone https://github.com/lukasstorck/calendar-manager
+cd calendar-manager
+
+cp .env.example .env
+# disable oidc auth for demo
+sed -i 's/^SKIP_AUTHENTICATION=.*/SKIP_AUTHENTICATION=true/' .env
+
+docker compose up --build</code></pre>
+                  </div>
+                </div>
+              </div>
+              <div class="col-lg-6 d-flex">
+                <div class="card landing-card w-100">
+                  <div class="card-body">
+                    <h3 class="h5 fw-bold"><i class="fa-solid fa-key text-success me-2"></i>Sign in with your own identity provider</h3>
+                    <p class="text-body-secondary">
+                      Authentication is delegated to OpenID Connect &mdash; no passwords are stored. Configure the providers you want to offer and users log in
+                      with them.
+                    </p>
+                    <div class="d-flex flex-wrap gap-2">
+                      <span class="badge text-bg-secondary fs-6 fw-normal"><i class="fa-solid fa-key me-1"></i>Pocket ID / any OIDC</span>
+                      <span class="badge text-bg-secondary fs-6 fw-normal"><i class="fa-brands fa-github me-1"></i>GitHub</span>
+                      <span class="badge text-bg-secondary fs-6 fw-normal"><i class="fa-brands fa-google me-1"></i>Google</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Final call to action -->
+        <section class="border-top py-5 landing-hero">
+          <div class="container text-center" style="max-width: 640px">
+            <h2 class="fw-bold mb-3">Ready to tidy up your calendars?</h2>
+            <button class="btn btn-primary btn-lg" data-bs-toggle="offcanvas" data-bs-target="#login-offcanvas">
+              <i class="fa-solid fa-right-to-bracket me-2"></i>Log in to get started
+            </button>
+          </div>
+        </section>
       </main>
+
+      <footer class="border-top py-3">
+        <div class="container d-flex flex-wrap justify-content-between gap-2 small text-body-secondary">
+          <span><i class="fa-solid fa-calendar-days me-1"></i>Calendar Manager</span>
+          <a class="link-secondary text-decoration-none" href="https://github.com/lukasstorck/calendar-manager" target="_blank" rel="noopener"
+            ><i class="fa-brands fa-github me-1"></i>Source on GitHub</a
+          >
+        </div>
+      </footer>
     </div>
 
     <!-- Logged in: the app -->
