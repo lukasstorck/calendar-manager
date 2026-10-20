@@ -421,7 +421,7 @@ class CalendarPipeline:
     4. event UID
     """
 
-    _MIN_DT = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+    _MIN_DT = datetime.datetime.min.replace(tzinfo=datetime.UTC)
 
     def build_sort_key(component: icalendar.Component):
       if not isinstance(component, icalendar.Event):
@@ -457,11 +457,11 @@ class CalendarPipeline:
     if isinstance(value, datetime.datetime):
       if value.tzinfo is None:
         # floating time: assume UTC
-        return value.replace(tzinfo=datetime.timezone.utc)
+        return value.replace(tzinfo=datetime.UTC)
       # convert to UTC (if not already UTC)
-      return value.astimezone(datetime.timezone.utc)
+      return value.astimezone(datetime.UTC)
     # plain date (all-day event) -> midnight UTC
-    return datetime.datetime.combine(value, datetime.time.min, tzinfo=datetime.timezone.utc)
+    return datetime.datetime.combine(value, datetime.time.min, tzinfo=datetime.UTC)
 
   @staticmethod
   def _is_all_day(event: icalendar.Event) -> bool:
@@ -754,7 +754,7 @@ async def get_or_create_calendar_file(db: AsyncSession, calendar: CalendarPipeli
 
 async def update_export_data(db: AsyncSession, export: CalendarExport, now: datetime.datetime | None = None):
   """Recompute an export's output"""
-  now = now or datetime.datetime.now(datetime.timezone.utc)
+  now = now or datetime.datetime.now(datetime.UTC)
 
   old_hash = CalendarPipeline(export.output_ics).hash if export.output_ics else None
 
