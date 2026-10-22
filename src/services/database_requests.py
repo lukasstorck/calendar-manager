@@ -132,6 +132,15 @@ async def get_calendar_file_by_hash(db: AsyncSession, file_hash: str) -> Calenda
   return result.scalar_one_or_none()
 
 
+async def get_calendar_file_by_raw_hash(db: AsyncSession, raw_hash: str) -> CalendarFile | None:
+  """Find a calendar file by its unmodified raw hash."""
+  query = select(CalendarFile)\
+          .where(CalendarFile.raw_hash == raw_hash).limit(1)  # fmt: skip
+  
+  result = await db.execute(query)
+  return result.scalars().first()
+
+
 async def get_calendar_file_stats(db: AsyncSession, file_id: uuid.UUID):
   """Calendar file stats."""
   query = select(CalendarFile.event_count, CalendarFile.range_start, CalendarFile.range_end) \

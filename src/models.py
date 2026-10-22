@@ -44,10 +44,14 @@ class CalendarFile(Base):
   """Immutable ICS content, stored exactly once per content hash."""
 
   __tablename__ = 'calendar_files'
-  __table_args__ = (UniqueConstraint('hash', name='uq_calendar_file_hash'),)
+  __table_args__ = (
+    UniqueConstraint('hash', name='uq_calendar_file_hash'),
+    UniqueConstraint('raw_hash', name='uq_calendar_file_raw_hash'),
+  )
 
   id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
   hash: Mapped[str] = mapped_column(String(64))
+  raw_hash: Mapped[str] = mapped_column(String(64))
   data: Mapped[str] = mapped_column(Text)
   event_count: Mapped[int] = mapped_column(Integer, default=0)
   range_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -169,7 +169,8 @@ shift:PT1H set-location:"Room 1" remove:description remove:extra-properties
 - bug: calendar export source field validation: error is set on wrong field
 - bug: setting error in ui is interrupting work flow by focusing different field
 
-- normalize calendar file before saving -> google seems to be inconsistant with order -> should have same hash for change detection
+- when merging calendar use new component/event hash instead of uid (might not be unique due to rrule override)
+
 - add documentation strings for all apis (so that they can be read by swagger)
 
 

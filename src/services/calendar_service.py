@@ -3,7 +3,6 @@ import dataclasses
 import datetime
 import enum
 import functools
-import hashlib
 import re
 import shlex
 import sqlite3
@@ -16,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import src.config
 import src.logging
+import src.util
 from src.models import CalendarExport, CalendarFile
 from src.services import database_requests
 
@@ -128,7 +128,8 @@ class CalendarPipeline:
 
   @functools.cached_property
   def hash(self) -> str:
-    return hashlib.sha256(self.raw_bytes).hexdigest()
+    """sha256 of the normalized serialization"""
+    return src.util.normalized_calendar_hash(self.raw_bytes)
 
   @functools.cached_property
   def _stats(self) -> _CalendarStats:
@@ -419,17 +420,29 @@ class CalendarPipeline:
     2. event start
     3. event end
     4. event UID
+    5. component hash without DTSTAMP
     """
 
-    _MIN_DT = datetime.datetime.min.replace(tzinfo=datetime.UTC)
+    def is_event(component: icalendar.Component) -> bool:
+      return isinstance(component, icalendar.Event)
 
-    def build_sort_key(component: icalendar.Component):
-      if not isinstance(component, icalendar.Event):
-        return (0, _MIN_DT, _MIN_DT, '')
+    def sort_key_builder_event_start_end(component: icalendar.Component):
+      event = is_event(component)
+
+      if not event:
+        return (False,)
+
       start, end = CalendarPipeline._event_bounds(component)
-      return (1, start or _MIN_DT, end or _MIN_DT, str(component.get('UID', '')))
+      start = start or src.util.MINIMUM_DATETIME
+      end = end or src.util.MINIMUM_DATETIME
 
-    self.calendar.subcomponents.sort(key=build_sort_key)
+      return event, start, end
+
+    def sort_key_builder_uid(component: icalendar.Component):
+      return str(component.get('UID', ''))
+
+    sort_key_builders = [sort_key_builder_event_start_end, sort_key_builder_uid, src.util.normalized_calendar_component_hash]
+    self.calendar.subcomponents[:] = src.util.lazy_multi_sort(items=self.calendar.subcomponents, sort_key_builders=sort_key_builders, logger=logger)
 
   # TODO move most of these static methods out of CalendarPipeline
 
@@ -730,13 +743,27 @@ async def fetch_url(url: str) -> tuple[bytes | None, str | None]:
 
 
 async def get_or_create_calendar_file(db: AsyncSession, calendar: CalendarPipeline) -> CalendarFile:
-  """Return the pooled CalendarFile for this content, creating it if it does not exist yet."""
-  calendar_file = await database_requests.get_calendar_file_by_hash(db, calendar.hash)
+  """Return the pooled CalendarFile for this content, creating it if it does not exist yet.
+
+  Look up by raw hash over unmodified normalized calendar byte data from the source.
+  If not found, parse and sort the calendar in place and look up by sorted hash.
+  Otherwise, create a new file.
+  """
+
+  raw_hash = calendar.hash
+  calendar_file = await database_requests.get_calendar_file_by_raw_hash(db, raw_hash)
+  if calendar_file is not None:
+    return calendar_file
+
+  calendar.sort_components()  # drops the cached hash, raw_bytes and text
+  sorted_hash = calendar.hash
+  calendar_file = await database_requests.get_calendar_file_by_hash(db, sorted_hash)
   if calendar_file is not None:
     return calendar_file
 
   calendar_file = CalendarFile(
-    hash=calendar.hash,
+    hash=sorted_hash,
+    raw_hash=raw_hash,
     data=calendar.text,
     event_count=calendar.event_count,
     range_start=calendar.range_start,
@@ -748,7 +775,7 @@ async def get_or_create_calendar_file(db: AsyncSession, calendar: CalendarPipeli
       db.add(calendar_file)
   except IntegrityError:
     # someone else stored the same content between our lookup and the insert
-    calendar_file = await database_requests.get_calendar_file_by_hash(db, calendar.hash)
+    calendar_file = await database_requests.get_calendar_file_by_hash(db, sorted_hash)
   return calendar_file
 
 
